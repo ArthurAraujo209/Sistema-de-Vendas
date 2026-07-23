@@ -5,7 +5,7 @@ import { router } from '../../router.js';
 import { validateEmail, validatePassword } from '../../utils/validators.js';
 
 export function RegisterPage() {
-  const content = document.getElementById('app-content');
+  const content = document.getElementById('app-content') || document.getElementById('app');
   content.innerHTML = `
     <div class="auth-container">
       <div class="auth-card">
@@ -22,6 +22,10 @@ export function RegisterPage() {
           <div class="form-group">
             <label for="reg-email">E-mail</label>
             <input type="email" id="reg-email" class="form-input" required placeholder="seu@email.com">
+          </div>
+          <div class="form-group">
+            <label for="reg-phone">Telefone (WhatsApp)</label>
+            <input type="tel" id="reg-phone" class="form-input" placeholder="(11) 99999-9999">
           </div>
           <div class="form-group">
             <label for="reg-password">Senha</label>
@@ -52,6 +56,7 @@ export function RegisterPage() {
     e.preventDefault();
     const name = document.getElementById('reg-name').value.trim();
     const email = document.getElementById('reg-email').value.trim();
+    const phone = document.getElementById('reg-phone').value.trim();
     const password = document.getElementById('reg-password').value;
     const role = form.querySelector('input[name="role"]:checked').value;
 
@@ -73,7 +78,7 @@ export function RegisterPage() {
     errorDiv.style.display = 'none';
 
     try {
-      await register(email, password, name, role);
+      await register(email, password, name, role, phone);
       showToast('Conta criada com sucesso!', 'success');
     } catch (err) {
       const messages = {

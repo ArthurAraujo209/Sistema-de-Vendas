@@ -6,7 +6,7 @@ import { store } from '../../store.js';
 import { validateEmail } from '../../utils/validators.js';
 
 export function LoginPage() {
-  const content = document.getElementById('app-content');
+  const content = document.getElementById('app-content') || document.getElementById('app');
   content.innerHTML = `
     <div class="auth-container">
       <div class="auth-card">

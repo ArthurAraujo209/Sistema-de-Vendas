@@ -8,12 +8,14 @@ const sellerLinks = [
   { path: '/seller/orders', icon: '📋', label: 'Pedidos' },
   { path: '/seller/clients', icon: '👥', label: 'Clientes' },
   { path: '/seller/exports', icon: '📥', label: 'Exportar' },
-  { path: '/seller/notifications', icon: '🔔', label: 'Notificações' }
+  { path: '/seller/notifications', icon: '🔔', label: 'Notificações' },
+  { path: '/seller/settings', icon: '⚙️', label: 'Configurações' }
 ];
 
 const clientLinks = [
   { path: '/client/dashboard', icon: '🏠', label: 'Início' },
-  { path: '/client/campaigns', icon: '🛍️', label: 'Campanhas' }
+  { path: '/client/campaigns', icon: '🛍️', label: 'Campanhas' },
+  { path: '/client/profile', icon: '👤', label: 'Perfil' }
 ];
 
 export function Sidebar() {
@@ -38,20 +40,53 @@ export function Sidebar() {
     </ul>
   `;
 
+  // Navegação: ao clicar em um link, fecha a sidebar em mobile
   nav.addEventListener('click', (e) => {
     const link = e.target.closest('.nav-link');
     if (link) {
       e.preventDefault();
       router.navigate(link.dataset.path);
+      if (window.innerWidth <= 768) {
+        store.set('sidebarCollapsed', true);
+      }
     }
   });
 
+  // Controle do overlay mobile
+  let overlay = null;
+
+  const updateOverlay = (isOpen) => {
+    if (window.innerWidth <= 768) {
+      if (isOpen && !overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'sidebar-overlay';
+        document.body.appendChild(overlay);
+        overlay.addEventListener('click', () => store.set('sidebarCollapsed', true));
+      } else if (!isOpen && overlay) {
+        overlay.remove();
+        overlay = null;
+      }
+    }
+  };
+
+  // Estado inicial
+  updateOverlay(!collapsed);
+
+  // Reage a mudanças de estado (ex: clique no toggle do header)
   eventBus.on('stateChange', (changes) => {
     if ('sidebarCollapsed' in changes) {
       nav.classList.toggle('collapsed', changes.sidebarCollapsed);
+      updateOverlay(!changes.sidebarCollapsed);
     }
-    if ('currentUser' in changes) {
-      // Recriar sidebar se necessário, mas por simplicidade o layout será recriado ao mudar de usuário
+  });
+
+  // Se redimensionar a janela para desktop, remove overlay
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 768 && overlay) {
+      overlay.remove();
+      overlay = null;
+    } else if (window.innerWidth <= 768 && !store.get('sidebarCollapsed')) {
+      updateOverlay(true);
     }
   });
 

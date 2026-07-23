@@ -11,7 +11,8 @@ class Router {
   }
 
   addRoute(pattern, handler, meta = {}) {
-    this.routes.push({ pattern: new RegExp('^' + pattern.replace(/:\w+/g, '([\\w-]+)') + '$'), handler, meta });
+    const regex = new RegExp('^' + pattern.replace(/:\w+/g, '([\\w-]+)') + '$');
+    this.routes.push({ pattern, regex, handler, meta });
     return this;
   }
 
@@ -39,20 +40,32 @@ class Router {
     }
 
     for (const route of this.routes) {
-      const match = path.match(route.pattern);
+      const match = path.match(route.regex);
       if (match) {
         const params = {};
-        const paramNames = (route.pattern.source.match(/:(\w+)/g) || []).map(p => p.slice(1));
+        const paramNames = (route.pattern.match(/:(\w+)/g) || []).map(p => p.slice(1));
         paramNames.forEach((name, i) => params[name] = match[i + 1]);
-        
+
         this.currentRoute = { path, params, meta: route.meta };
-        document.getElementById('app-content').innerHTML = '';
+
+        // Container de conteúdo: usa #app-content se existir (layout montado), senão cria um em #app
+        let appContent = document.getElementById('app-content');
+        if (!appContent) {
+          const app = document.getElementById('app');
+          appContent = document.createElement('div');
+          appContent.id = 'app-content';
+          app.appendChild(appContent);
+        }
+        appContent.innerHTML = '';
         await route.handler(params);
         return;
       }
     }
 
-    document.getElementById('app-content').innerHTML = '<div class="page-404"><h2>404</h2><p>Página não encontrada</p></div>';
+    const appContent = document.getElementById('app-content') || document.getElementById('app');
+    if (appContent) {
+      appContent.innerHTML = '<div class="page-404"><h2>404</h2><p>Página não encontrada</p></div>';
+    }
   }
 }
 
