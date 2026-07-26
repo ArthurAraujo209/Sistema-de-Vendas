@@ -28,7 +28,8 @@ export function LoginPage() {
         </form>
         <div id="login-error" class="auth-error" style="display:none;"></div>
         <div class="auth-footer">
-          Não tem conta? <a href="#/register">Cadastre-se</a>
+          Não tem conta? <a href="#/register">Cadastre-se como cliente</a><br>
+          Quer vender? <a href="#/seller-request">Solicite conta de vendedor</a>
         </div>
       </div>
     </div>

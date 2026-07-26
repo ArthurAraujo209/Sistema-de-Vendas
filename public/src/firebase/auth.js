@@ -5,7 +5,7 @@ import {
   onAuthStateChanged,
   updateProfile
 } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, addDoc, getDoc, collection } from 'firebase/firestore';
 import { auth, db } from './config.js';
 
 export async function register(email, password, displayName, role = 'client', phone = '') {
@@ -40,4 +40,14 @@ export async function getUserProfile(uid) {
 
 export function observeAuthState(callback) {
   return onAuthStateChanged(auth, callback);
+}
+
+export async function requestSellerAccount(data) {
+  const docRef = await addDoc(collection(db, 'sellerApplications'), {
+    ...data,
+    status: 'pending',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+  return docRef.id;
 }

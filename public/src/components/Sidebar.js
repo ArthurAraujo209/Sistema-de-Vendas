@@ -18,11 +18,17 @@ const clientLinks = [
   { path: '/client/profile', icon: '👤', label: 'Perfil' }
 ];
 
+const adminLinks = [
+  { path: '/admin/dashboard', icon: '🛡️', label: 'Dashboard' },
+  { path: '/admin/sellers', icon: '🏪', label: 'Vendedores' },
+  { path: '/admin/applications', icon: '📝', label: 'Solicitações' }
+];
+
 export function Sidebar() {
   const user = store.get('currentUser');
   const collapsed = store.get('sidebarCollapsed');
   const role = user?.role || 'client';
-  const links = role === 'seller' ? sellerLinks : clientLinks;
+  const links = role === 'admin' ? adminLinks : (role === 'seller' ? sellerLinks : clientLinks);
   const currentPath = router.getCurrentPath();
 
   const nav = document.createElement('nav');

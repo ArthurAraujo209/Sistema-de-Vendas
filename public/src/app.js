@@ -21,6 +21,10 @@ import { CampaignOrderPage } from './pages/client/CampaignOrder.js';
 import { ClientOrderDetailPage } from './pages/client/OrderDetail.js';
 import { ClientProfilePage } from './pages/client/Profile.js';
 import { Loader } from './components/Loader.js';
+import { AdminDashboardPage } from './pages/admin/Dashboard.js';
+import { AdminSellersPage } from './pages/admin/Sellers.js';
+import { AdminApplicationsPage } from './pages/admin/Applications.js';
+import { SellerRequestPage } from './pages/auth/SellerRequest.js';
 
 // Rotas (mantidas exatamente como antes)
 router.addRoute('/login', () => LoginPage(), { public: true });
@@ -35,16 +39,21 @@ router.addRoute('/seller/clients', () => ClientsPage(), { role: 'seller' });
 router.addRoute('/seller/exports', () => ExportsPage(), { role: 'seller' });
 router.addRoute('/seller/notifications', () => NotificationsPage(), { role: 'seller' });
 router.addRoute('/seller/settings', () => SettingsPage(), { role: 'seller' });
+router.addRoute('/seller-request', () => SellerRequestPage(), { public: true });
 router.addRoute('/client/dashboard', () => ClientDashboardPage(), { role: 'client' });
 router.addRoute('/client/campaigns/:campaignId/order', (params) => CampaignOrderPage(params), { role: 'client' });
 router.addRoute('/client/campaigns/:id', (params) => ClientCampaignDetailPage(params), { role: 'client' });
 router.addRoute('/client/campaigns', () => ClientCampaignsPage(), { role: 'client' });
 router.addRoute('/client/orders/:id', (params) => ClientOrderDetailPage(params), { role: 'client' });
 router.addRoute('/client/profile', () => ClientProfilePage(), { role: 'client' });
+router.addRoute('/admin/dashboard', () => AdminDashboardPage(), { role: 'admin' });
+router.addRoute('/admin/sellers', () => AdminSellersPage(), { role: 'admin' });
+router.addRoute('/admin/applications', () => AdminApplicationsPage(), { role: 'admin' });
 
 router.beforeNavigate(async (path) => {
   const user = store.get('currentUser');
-  const publicRoutes = ['/login', '/register'];
+  const publicRoutes = ['/login', '/register', '/seller-request'];
+  if (path.startsWith('/admin') && user.role !== 'admin') return '/login';
   if (publicRoutes.includes(path)) {
     if (user) {
       return user.role === 'seller' ? '/seller/dashboard' : '/client/dashboard';

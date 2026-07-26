@@ -32,10 +32,9 @@ export function RegisterPage() {
             <input type="password" id="reg-password" class="form-input" required placeholder="Mínimo 6 caracteres">
           </div>
           <div class="form-group">
-            <label>Tipo de conta</label>
+            <label style="display: none;">Tipo de conta</label>
             <div class="radio-group">
-              <label><input type="radio" name="role" value="client" checked> Cliente</label>
-              <label><input type="radio" name="role" value="seller"> Vendedor</label>
+              <label style="display: none;"><input type="radio" name="role" value="client" checked style="display: none;"> Cliente</label>
             </div>
           </div>
           <button type="submit" class="btn btn-primary btn-block" id="register-submit">Criar Conta</button>
