@@ -51,11 +51,11 @@ export async function AdminApplicationsPage() {
             displayName: appData.name,
             phone: appData.phone,
             role: 'seller',
-            instagram: appData.instagram,
-            description: appData.description,
-            photoUrl: appData.photoUrl,
+            description: appData.description,      // ← adicionar
+            instagram: appData.instagram,          // ← adicionar
+            photoUrl: appData.photoUrl,            // ← adicionar
             subscriptionStatus: 'active',
-            subscriptionExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 dias teste
+            subscriptionExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
             approvedBy: 'admin',
             approvedAt: new Date().toISOString(),
             createdAt: new Date().toISOString(),

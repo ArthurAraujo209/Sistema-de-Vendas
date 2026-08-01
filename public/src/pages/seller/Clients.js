@@ -1,5 +1,5 @@
 import { getOrders } from '../../firebase/firestore.js';
-import { getDocs, collection, query, where, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { collection, query, where, getDocs, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from '../../firebase/config.js';
 import { store } from '../../store.js';
 import { Loader } from '../../components/Loader.js';
@@ -10,33 +10,46 @@ export async function ClientsPage() {
 
   try {
     const sellerId = store.get('currentUser').uid;
-    // Buscar pedidos para extrair clientes únicos
-    const ordersSnap = await getDocs(query(collection(db, 'orders'), where('sellerId', '==', sellerId), orderBy('createdAt', 'desc')));
+
+    // Buscar todos os pedidos do vendedor
+    const ordersSnap = await getDocs(
+      query(collection(db, 'orders'), where('sellerId', '==', sellerId), orderBy('createdAt', 'desc'))
+    );
+
+    // Extrair clientId únicos e guardar nome do pedido como fallback
     const clientMap = new Map();
     ordersSnap.forEach(doc => {
       const order = doc.data();
       if (!clientMap.has(order.clientId)) {
         clientMap.set(order.clientId, {
           id: order.clientId,
-          name: order.clientName || 'Desconhecido',
-          email: '', // preencher depois se necessário
+          name: order.clientName || 'Sem nome',   // fallback
+          email: '',
           phone: ''
         });
       }
     });
 
-    // Buscar detalhes dos usuários (email, telefone)
+    // Buscar detalhes dos usuários (displayName, email, phone)
     const clientIds = Array.from(clientMap.keys());
-    if (clientIds.length) {
-      const usersSnap = await getDocs(query(collection(db, 'users'), where('uid', 'in', clientIds)));
-      usersSnap.forEach(doc => {
-        const user = doc.data();
-        if (clientMap.has(user.uid)) {
+
+    if (clientIds.length > 0) {
+      // Firestore 'in' só aceita até 10 valores – dividir em lotes
+      const chunkSize = 10;
+      for (let i = 0; i < clientIds.length; i += chunkSize) {
+        const chunk = clientIds.slice(i, i + chunkSize);
+        const usersSnap = await getDocs(query(collection(db, 'users'), where('uid', 'in', chunk)));
+        usersSnap.forEach(doc => {
+          const user = doc.data();
           const client = clientMap.get(user.uid);
-          client.email = user.email || '';
-          client.phone = user.phone || '';
-        }
-      });
+          if (client) {
+            // Substituir pelo nome do perfil, se disponível
+            client.name = user.displayName || client.name;
+            client.email = user.email || '';
+            client.phone = user.phone || '';
+          }
+        });
+      }
     }
 
     const clients = Array.from(clientMap.values());

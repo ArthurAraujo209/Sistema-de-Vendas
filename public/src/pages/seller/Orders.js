@@ -125,7 +125,6 @@ export async function OrdersPage() {
               <td>${fmtDate(o.createdAt)}</td>
               <td class="actions-cell">
                 <button class="btn btn-sm btn-outline view-order" data-id="${o.id}">Ver</button>
-                <button class="btn btn-sm btn-outline edit-order" data-id="${o.id}">Editar</button>
               </td>
             </tr>
           `).join('')}
