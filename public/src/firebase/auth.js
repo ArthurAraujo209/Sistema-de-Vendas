@@ -15,6 +15,7 @@ import {
 import { doc, setDoc, addDoc, getDoc, collection } from 'firebase/firestore';
 import { auth, db } from './config.js';
 
+
 const googleProvider = new GoogleAuthProvider();
 
 // ===== Registro (email/senha) =====
