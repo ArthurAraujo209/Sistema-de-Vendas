@@ -14,8 +14,8 @@ const sellerLinks = [
 ];
 
 const clientLinks = [
-  { path: '/client/dashboard', icon: icon('home'), label: 'Início' },
-  { path: '/client/campaigns', icon: icon('shop'), label: 'Campanhas' },
+  { path: '/client/explore', icon: icon('search'), label: 'Descobrir' },
+  { path: '/client/dashboard', icon: icon('orders'), label: 'Meus Pedidos' },
   { path: '/client/profile', icon: icon('user'), label: 'Perfil' }
 ];
 

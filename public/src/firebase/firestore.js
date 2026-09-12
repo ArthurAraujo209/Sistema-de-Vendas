@@ -3,8 +3,8 @@ import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, setDoc,
   query, where, orderBy, limit, getCountFromServer, writeBatch
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-import { 
-  createUserWithEmailAndPassword 
+import {
+  createUserWithEmailAndPassword
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { store } from '../store.js';
 
@@ -64,8 +64,27 @@ export async function deleteCampaign(id) {
 export async function createOrder(data) {
   const sellerId = getSellerId();
   const now = new Date().toISOString();
+
+  // Busca dados do cliente direto do Firestore (não confia no payload)
+  let clientPhone = '';
+  let clientEmail = '';
+  if (data.clientId) {
+    try {
+      const cSnap = await getDoc(doc(db, 'users', data.clientId));
+      if (cSnap.exists()) {
+        const c = cSnap.data();
+        clientPhone = c.phone || '';
+        clientEmail = c.email || '';
+      }
+    } catch (err) {
+      console.warn('[createOrder enrich]', err?.code || err?.message);
+    }
+  }
+
   const orderData = {
     ...data,
+    clientPhone: clientPhone || data.clientPhone || '',
+    clientEmail: clientEmail || data.clientEmail || '',
     sellerId,
     status: data.status || 'awaiting_payment',
     createdAt: now,
@@ -116,7 +135,6 @@ export async function updateOrder(id, data, changeDescription) {
     history: [...(current.history || []), historyEntry]
   });
 
-  // Notificar cliente sobre mudança de status
   if (data.status && data.status !== current.status && current.clientId) {
     const statusLabel = {
       awaiting_payment: 'Aguardando pagamento',
@@ -130,12 +148,16 @@ export async function updateOrder(id, data, changeDescription) {
       delivered: 'Entregue',
       cancelled: 'Cancelado'
     };
-    await createNotification(current.clientId, {
-      type: 'status_update',
-      title: 'Status do pedido atualizado',
-      message: `Seu pedido #${id.substring(0,6)} agora está "${statusLabel[data.status] || data.status}".`,
-      link: `/client/orders/${id}`
-    });
+    try {
+      await createNotification(current.clientId, {
+        type: 'status_update',
+        title: 'Status do pedido atualizado',
+        message: `Seu pedido #${id.substring(0,6)} agora está "${statusLabel[data.status] || data.status}".`,
+        link: `/client/orders/${id}`
+      });
+    } catch (err) {
+      console.warn('[notif status_update]', err?.code || err?.message);
+    }
   }
 }
 
@@ -182,14 +204,17 @@ export async function addPayment(orderId, paymentData) {
 
   await updateOrder(orderId, {}, `Pagamento de ${formatCurrency(newAmount)} adicionado (${paymentData.method || 'não informado'})`);
 
-  // Notificar vendedor sobre novo pagamento
   if (order.sellerId) {
-    await createNotification(order.sellerId, {
-      type: 'new_payment',
-      title: 'Novo pagamento recebido',
-      message: `Pagamento de ${formatCurrency(newAmount)} no pedido #${orderId.substring(0,6)}.`,
-      link: `/seller/orders/${orderId}`
-    });
+    try {
+      await createNotification(order.sellerId, {
+        type: 'new_payment',
+        title: 'Novo pagamento recebido',
+        message: `Pagamento de ${formatCurrency(newAmount)} no pedido #${orderId.substring(0,6)}.`,
+        link: `/seller/orders/${orderId}`
+      });
+    } catch (err) {
+      console.warn('[notif new_payment]', err?.code || err?.message);
+    }
   }
 
   return newPaymentRef.id;
@@ -202,7 +227,7 @@ export async function getPayments(orderId) {
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-// ========== Usuários (cliente) ==========
+// ========== Usuários ==========
 export async function getUserByEmail(email) {
   const q = query(collection(db, 'users'), where('email', '==', email.toLowerCase().trim()));
   const snap = await getDocs(q);
@@ -210,18 +235,19 @@ export async function getUserByEmail(email) {
   return { id: snap.docs[0].id, ...snap.docs[0].data() };
 }
 
-export async function createClientUser(email, displayName) {
+export async function createClientUser(email, displayName, phone = '') {
   const tempPassword = 'temp' + Math.random().toString(36).slice(2, 10);
   const userCred = await createUserWithEmailAndPassword(auth, email, tempPassword);
   await setDoc(doc(db, 'users', userCred.user.uid), {
     uid: userCred.user.uid,
     email,
     displayName,
+    phone,
     role: 'client',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   });
-  return { id: userCred.user.uid, email, displayName, role: 'client' };
+  return { id: userCred.user.uid, email, displayName, phone, role: 'client' };
 }
 
 // ========== Cliente ==========
@@ -232,30 +258,53 @@ export async function getOpenCampaigns() {
 }
 
 export async function createClientOrder(data) {
-  const clientId = store.get('currentUser').uid;
+  const current = store.get('currentUser');
+  const clientId = current.uid;
+  let profile = store.get('userProfile') || {};
+
+  // Fallback: se o profile local está vazio/sem telefone, busca direto do Firestore.
+  // Isso resolve o caso de race condition no primeiro login após o registro.
+  if (!profile.phone) {
+    try {
+      const snap = await getDoc(doc(db, 'users', clientId));
+      if (snap.exists()) {
+        profile = { ...snap.data(), ...profile };
+        store.set('userProfile', profile);
+      }
+    } catch (err) {
+      console.warn('[createClientOrder fetch profile]', err?.code || err?.message);
+    }
+  }
+
   const now = new Date().toISOString();
+
   const orderData = {
     ...data,
     clientId,
+    clientPhone: profile.phone || data.clientPhone || '',
+    clientEmail: profile.email || current.email || '',
     status: 'awaiting_payment',
     createdAt: now,
     updatedAt: now,
     history: [{
       timestamp: now,
       userId: clientId,
-      userName: store.get('currentUser').displayName || 'Cliente',
+      userName: current.displayName || 'Cliente',
       action: 'Pedido criado pelo cliente'
     }]
   };
   const docRef = await addDoc(collection(db, 'orders'), orderData);
 
-  // Notificar vendedor
-  await createNotification(data.sellerId, {
-    type: 'new_order',
-    title: 'Novo pedido recebido',
-    message: `Cliente ${data.clientName} fez um pedido na campanha "${data.campaignTitle}".`,
-    link: `/seller/orders/${docRef.id}`
-  });
+  try {
+    await createNotification(data.sellerId, {
+      type: 'new_order',
+      title: 'Novo pedido recebido',
+      message: `Cliente ${data.clientName} fez um pedido na campanha "${data.campaignTitle}".`,
+      link: `/seller/orders/${docRef.id}`
+    });
+  } catch (err) {
+    console.warn('[notif new_order]', err?.code || err?.message);
+  }
 
   return docRef.id;
 }
@@ -297,14 +346,17 @@ export async function cancelClientOrder(orderId) {
     history: [...(order.history || []), historyEntry]
   });
 
-  // Notificar vendedor
   if (order.sellerId) {
-    await createNotification(order.sellerId, {
-      type: 'order_cancelled',
-      title: 'Pedido cancelado',
-      message: `Cliente ${order.clientName} cancelou o pedido #${orderId.substring(0,6)}.`,
-      link: `/seller/orders/${orderId}`
-    });
+    try {
+      await createNotification(order.sellerId, {
+        type: 'order_cancelled',
+        title: 'Pedido cancelado',
+        message: `Cliente ${order.clientName} cancelou o pedido #${orderId.substring(0,6)}.`,
+        link: `/seller/orders/${orderId}`
+      });
+    } catch (err) {
+      console.warn('[notif order_cancelled]', err?.code || err?.message);
+    }
   }
 }
 
@@ -348,7 +400,54 @@ export async function exportOrdersData(filters = {}) {
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-// Helper interno
+// ========== Marketplace ==========
+export async function getActiveSellers() {
+  const q = query(
+    collection(db, 'users'),
+    where('role', '==', 'seller'),
+    where('subscriptionStatus', '==', 'active')
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => {
+    const u = d.data();
+    return {
+      id: d.id,
+      displayName: u.displayName || 'Loja',
+      photoUrl: u.photoUrl || '',
+      description: u.description || '',
+      instagram: u.instagram || '',
+      whatsapp: u.phone || ''
+    };
+  });
+}
+
+export async function getOpenCampaignsBySeller(sellerId) {
+  const q = query(
+    collection(db, 'campaigns'),
+    where('sellerId', '==', sellerId),
+    where('status', '==', 'open'),
+    orderBy('createdAt', 'desc')
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export async function getSellerPublicProfile(sellerId) {
+  const snap = await getDoc(doc(db, 'users', sellerId));
+  if (!snap.exists()) return null;
+  const u = snap.data();
+  if (u.role !== 'seller') return null;
+  return {
+    id: sellerId,
+    displayName: u.displayName || 'Loja',
+    photoUrl: u.photoUrl || '',
+    description: u.description || '',
+    instagram: u.instagram || '',
+    whatsapp: u.phone || ''
+  };
+}
+
+// ========== Helper ==========
 function formatCurrency(value) {
   return Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }

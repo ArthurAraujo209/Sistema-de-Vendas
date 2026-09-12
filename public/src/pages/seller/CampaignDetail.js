@@ -29,6 +29,7 @@ function renderForm(campaign) {
   const isNew = !campaign;
   const title = isNew ? 'Nova Campanha' : `Editando: ${campaign.title}`;
   const canEdit = isNew || campaign.status === 'draft' || campaign.status === 'open';
+  const maxInst = campaign?.maxInstallments || 1;
 
   const content = document.getElementById('app-content');
   content.innerHTML = `
@@ -65,6 +66,17 @@ function renderForm(campaign) {
             <label for="camp-cost">Custo (R$)</label>
             <input type="number" id="camp-cost" class="form-input" step="0.01" min="0" value="${campaign?.cost || ''}" ${!canEdit ? 'disabled' : ''}>
           </div>
+          <div class="form-group">
+            <label for="camp-max-installments">Máximo de parcelas</label>
+            <select id="camp-max-installments" class="form-select" ${!canEdit ? 'disabled' : ''}>
+              <option value="1" ${maxInst === 1 ? 'selected' : ''}>À vista (1x)</option>
+              <option value="2" ${maxInst === 2 ? 'selected' : ''}>Até 2x</option>
+              <option value="3" ${maxInst === 3 ? 'selected' : ''}>Até 3x</option>
+              <option value="4" ${maxInst === 4 ? 'selected' : ''}>Até 4x</option>
+              <option value="6" ${maxInst === 6 ? 'selected' : ''}>Até 6x</option>
+              <option value="12" ${maxInst === 12 ? 'selected' : ''}>Até 12x</option>
+            </select>
+          </div>
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -84,7 +96,7 @@ function renderForm(campaign) {
           <label>Imagens (URLs, uma por linha, ou faça upload)</label>
           <textarea id="camp-images" class="form-textarea" rows="3" placeholder="https://..." ${!canEdit ? 'disabled' : ''}>${(campaign?.images || []).join('\n')}</textarea>
           ${canEdit ? `<input type="file" id="image-upload" accept="image/*" multiple style="margin-top:0.5rem">` : ''}
-          ${campaign?.images?.length ? `<div class="image-previews">${campaign.images.map(url => `<img src="${esc(url)}" class="preview-thumb" onerror="this.style.display='none'">`).join('')}</div>` : ''}
+          ${campaign?.images?.length ? `<div class="image-previews">${campaign.images.map(url => `<img src="${esc(url)}" class="preview-thumb" loading="lazy" onerror="this.style.display='none'">`).join('')}</div>` : ''}
         </div>
 
         <h3>Campos Personalizados</h3>
@@ -113,7 +125,6 @@ function renderForm(campaign) {
         if (!files.length) return;
         const file = files[0];
 
-        // Modal de recorte
         const modalId = 'crop-modal-' + Date.now();
         const modalContent = `
           <div style="text-align:center;">
@@ -165,7 +176,7 @@ function renderForm(campaign) {
           cropper.destroy();
           closeModal(modalId);
         });
-        imageUpload.value = ''; // limpar input
+        imageUpload.value = '';
       });
     }
 
@@ -268,6 +279,7 @@ async function handleSubmit(e) {
     description: document.getElementById('camp-description').value.trim(),
     price: parseFloat(document.getElementById('camp-price').value) || 0,
     cost: parseFloat(document.getElementById('camp-cost').value) || 0,
+    maxInstallments: parseInt(document.getElementById('camp-max-installments').value) || 1,
     openDate: document.getElementById('camp-open-date').value,
     closeDate: document.getElementById('camp-close-date').value,
     estimatedDelivery: document.getElementById('camp-estimated-delivery').value,
@@ -285,7 +297,7 @@ async function handleSubmit(e) {
       await updateCampaign(campaignId, data);
       showToast('Campanha atualizada!', 'success');
     }
-    router.navigate('/seller/campaigns'); // sempre volta para a lista
+    router.navigate('/seller/campaigns');
   } catch (err) {
     console.error(err);
     showToast('Erro ao salvar campanha.', 'error');
@@ -317,4 +329,4 @@ async function handleDelete() {
   });
 }
 
-function esc(t) { return String(t).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[m]); }
+function esc(t) { return String(t ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }

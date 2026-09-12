@@ -8,6 +8,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Toast.js';
 import { Loader } from '../../components/Loader.js';
 import { ConfirmDialog, Modal, closeModal } from '../../components/Modal.js';
+import { whatsappLink } from '../../utils/imageUtils.js';
 
 let orderId = null;
 
@@ -95,11 +96,11 @@ async function renderNewOrderForm() {
       if (user.role !== 'client') return showToast('Usuário não é cliente.', 'error');
       selectedClientId = user.id;
       selectedClientName = user.displayName || email;
-      clientInfoDiv.innerHTML = `<span class="client-found">✅ ${selectedClientName} (existente)</span>`;
+      clientInfoDiv.innerHTML = `<span class="client-found">✅ ${esc(selectedClientName)} (existente)</span>`;
     } else {
       ConfirmDialog({
         title: 'Cliente não encontrado',
-        message: `Criar novo cliente com email "${email}"?`,
+        message: `Criar novo cliente com email "${esc(email)}"?`,
         confirmText: 'Criar',
         onConfirm: async () => {
           const name = prompt('Nome do cliente:');
@@ -108,7 +109,7 @@ async function renderNewOrderForm() {
             const newClient = await createClientUser(email, name);
             selectedClientId = newClient.id;
             selectedClientName = name;
-            clientInfoDiv.innerHTML = `<span class="client-found">✅ ${name} (criado agora)</span>`;
+            clientInfoDiv.innerHTML = `<span class="client-found">✅ ${esc(name)} (criado agora)</span>`;
             showToast('Cliente criado.', 'success');
           } catch (err) {
             console.error(err);
@@ -132,7 +133,7 @@ async function renderNewOrderForm() {
       let inp = '';
       if (f.type === 'text') inp = `<input type="text" name="${name}" class="form-input" ${f.required?'required':''}>`;
       else if (f.type === 'number') inp = `<input type="number" name="${name}" class="form-input" ${f.required?'required':''}>`;
-      else if (f.type === 'select' || f.type === 'radio') inp = `<select name="${name}" class="form-select" ${f.required?'required':''}><option value=""></option>${(f.options||[]).map(o=>`<option>${o}</option>`).join('')}</select>`;
+      else if (f.type === 'select' || f.type === 'radio') inp = `<select name="${name}" class="form-select" ${f.required?'required':''}><option value=""></option>${(f.options||[]).map(o=>`<option>${esc(o)}</option>`).join('')}</select>`;
       else if (f.type === 'checkbox') inp = `<label><input type="checkbox" name="${name}" ${f.required?'required':''}> Sim</label>`;
       return `<div class="form-group"><label>${esc(f.label)} ${f.required?'*':''}</label>${inp}</div>`;
     }).join('');
@@ -172,7 +173,6 @@ async function renderNewOrderForm() {
   });
 }
 
-// *** Nova função que carrega e exibe os detalhes do pedido ***
 async function renderOrderDetail(orderId) {
   const content = document.getElementById('app-content');
   try {
@@ -183,7 +183,6 @@ async function renderOrderDetail(orderId) {
     }
     const campaign = await getCampaign(order.campaignId);
     const payments = await getPayments(orderId);
-
     renderEditOrderForm(order, campaign, payments);
   } catch (err) {
     console.error(err);
@@ -191,7 +190,6 @@ async function renderOrderDetail(orderId) {
   }
 }
 
-// *** renderEditOrderForm agora aceita payments como parâmetro ***
 function renderEditOrderForm(order, campaign, payments) {
   const content = document.getElementById('app-content');
   const statusOptions = [
@@ -203,22 +201,31 @@ function renderEditOrderForm(order, campaign, payments) {
   const paid = order.paidAmount || 0;
   const total = order.totalAmount || 0;
   const remaining = Math.max(0, total - paid);
+  const hasDebt = remaining > 0 && order.status !== 'cancelled';
+  const waHref = order.clientPhone
+    ? whatsappLink(order.clientPhone, buildChargeMessage(order, remaining))
+    : '';
 
   content.innerHTML = `
     <div class="order-detail-page">
       <div class="page-header">
         <h1>Pedido #${order.id.substring(0,6)}</h1>
-        <div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+          ${hasDebt && waHref ? `<a href="${waHref}" target="_blank" rel="noopener" class="btn btn-success">💬 Cobrar no WhatsApp</a>` : ''}
+          ${hasDebt && !waHref ? `<button class="btn btn-outline" id="no-phone-btn">💬 Cobrar</button>` : ''}
           <button id="delete-order-btn" class="btn btn-danger">Excluir Pedido</button>
         </div>
       </div>
       <div class="card">
         <h3>Detalhes</h3>
         <p><strong>Cliente:</strong> ${esc(order.clientName)}</p>
+        ${order.clientPhone ? `<p><strong>Telefone:</strong> ${esc(order.clientPhone)}</p>` : ''}
+        ${order.clientEmail ? `<p><strong>E-mail:</strong> ${esc(order.clientEmail)}</p>` : ''}
         <p><strong>Campanha:</strong> ${esc(order.campaignTitle)}</p>
         <p><strong>Quantidade:</strong> ${order.quantity}</p>
+        ${order.installments && order.installments > 1 ? `<p><strong>Parcelamento:</strong> ${order.installments}x</p>` : ''}
         <p><strong>Valor Total:</strong> ${curr(total)}</p>
-        <p><strong>Pago:</strong> ${curr(paid)} / <strong>Restante:</strong> ${curr(remaining)}</p>
+        <p><strong>Pago:</strong> ${curr(paid)} / <strong>Restante:</strong> <span style="${hasDebt ? 'color:var(--danger); font-weight:700;' : 'color:var(--success);'}">${curr(remaining)}</span></p>
         <p><strong>Status:</strong> ${statusLabel(order.status)}</p>
         <div class="form-group">
           <label>Alterar Status:</label>
@@ -228,10 +235,9 @@ function renderEditOrderForm(order, campaign, payments) {
           <button id="update-status-btn" class="btn btn-primary mt-1">Atualizar Status</button>
         </div>
         <h4>Campos Personalizados</h4>
-        ${order.items?.[0]?.fields?.length ? order.items[0].fields.map(f => `<p><strong>${esc(f.label)}:</strong> ${f.value}</p>`).join('') : '<p>Nenhum</p>'}
+        ${order.items?.[0]?.fields?.length ? order.items[0].fields.map(f => `<p><strong>${esc(f.label)}:</strong> ${esc(f.value ?? '-')}</p>`).join('') : '<p>Nenhum</p>'}
       </div>
 
-      <!-- Seção de Pagamentos -->
       <div class="card">
         <h3>Pagamentos</h3>
         <div id="payments-list">
@@ -244,9 +250,9 @@ function renderEditOrderForm(order, campaign, payments) {
                     <td>${fmtDate(p.createdAt || p.date)}</td>
                     <td>${curr(p.amount)}</td>
                     <td>${paymentMethodLabel(p.method)}</td>
-                    <td>${p.notes && p.notes.includes('Comprovante:') 
-                    ? `<img src="${esc(p.notes.split('Comprovante: ')[1])}" class="payment-thumb" onclick="window.open('${esc(p.notes.split('Comprovante: ')[1])}')">` 
-                    : (esc(p.notes || '-'))}</td>
+                    <td>${p.notes && p.notes.includes('Comprovante:')
+                      ? `<img src="${esc(p.notes.split('Comprovante: ')[1])}" class="payment-thumb" onclick="window.open('${esc(p.notes.split('Comprovante: ')[1])}')">`
+                      : (esc(p.notes || '-'))}</td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -256,7 +262,6 @@ function renderEditOrderForm(order, campaign, payments) {
         <button id="add-payment-btn" class="btn btn-primary">+ Adicionar Pagamento</button>
       </div>
 
-      <!-- Histórico do Pedido -->
       <div class="card">
         <h4>Histórico</h4>
         <ul class="history-list">
@@ -266,15 +271,13 @@ function renderEditOrderForm(order, campaign, payments) {
     </div>
   `;
 
-  // Evento de alterar status
   document.getElementById('update-status-btn').addEventListener('click', async () => {
     const newStatus = document.getElementById('status-select').value;
     await updateOrder(order.id, { status: newStatus }, `Status alterado para ${statusLabel(newStatus)}`);
     showToast('Status atualizado.', 'success');
-    await renderOrderDetail(order.id); // recarrega sem sair da página
+    await renderOrderDetail(order.id);
   });
 
-  // Evento de excluir pedido
   document.getElementById('delete-order-btn').addEventListener('click', () => {
     ConfirmDialog({
       title: 'Excluir Pedido',
@@ -292,10 +295,16 @@ function renderEditOrderForm(order, campaign, payments) {
     });
   });
 
-  // Evento de adicionar pagamento
   document.getElementById('add-payment-btn').addEventListener('click', () => {
     openPaymentModal(order.id, paid, total);
   });
+
+  const noPhoneBtn = document.getElementById('no-phone-btn');
+  if (noPhoneBtn) {
+    noPhoneBtn.addEventListener('click', () => {
+      showToast('Cliente sem telefone. Peça para atualizar o perfil.', 'warning');
+    });
+  }
 }
 
 function openPaymentModal(orderId, currentPaid, totalAmount) {
@@ -340,25 +349,24 @@ function openPaymentModal(orderId, currentPaid, totalAmount) {
     onClose: () => {}
   });
 
-  document.getElementById('payment-form').addEventListener('submit', async (e) => {
+  modal.content.querySelector('#payment-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const amount = parseFloat(document.getElementById('payment-amount').value);
+    const amount = parseFloat(modal.content.querySelector('#payment-amount').value);
     if (isNaN(amount) || amount <= 0 || amount > remaining) {
       showToast('Valor inválido.', 'error');
       return;
     }
     const paymentData = {
       amount,
-      date: document.getElementById('payment-date').value,
-      method: document.getElementById('payment-method').value,
-      notes: document.getElementById('payment-notes').value
+      date: modal.content.querySelector('#payment-date').value,
+      method: modal.content.querySelector('#payment-method').value,
+      notes: modal.content.querySelector('#payment-notes').value
     };
 
     try {
       await addPayment(orderId, paymentData);
       showToast('Pagamento registrado!', 'success');
       closeModal(modal.id);
-      // Recarregar os detalhes do pedido (incluindo pagamentos) sem sair da página
       await renderOrderDetail(orderId);
     } catch (err) {
       console.error(err);
@@ -367,7 +375,18 @@ function openPaymentModal(orderId, currentPaid, totalAmount) {
   });
 }
 
-// Helpers
+function buildChargeMessage(order, remaining) {
+  const firstName = (order.clientName || '').split(' ')[0] || 'tudo bem';
+  const shortId = order.id.substring(0, 6);
+  return `Oi ${firstName}! Passando para falar sobre o seu pedido *#${shortId}* da campanha "${order.campaignTitle}".
+
+Total: ${curr(order.totalAmount)}
+Pago: ${curr(order.paidAmount || 0)}
+*Falta: ${curr(remaining)}*
+
+Quando puder, me avisa! Qualquer dúvida estou à disposição 😊`;
+}
+
 const statusLabel = s => ({
   awaiting_payment:'Aguardando pagamento', partial_payment:'Pagamento parcial', paid:'Pago',
   sent_to_factory:'Enviado p/ fábrica', in_production:'Em produção',
@@ -375,8 +394,8 @@ const statusLabel = s => ({
   available_for_pickup:'Disponível p/ retirada', delivered:'Entregue', cancelled:'Cancelado'
 }[s] || s);
 const fmtDate = d => d ? new Date(d).toLocaleString('pt-BR') : '-';
-const curr = v => v ? Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}) : '-';
-const esc = t => String(t).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[m]);
+const curr = v => Number(v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+const esc = t => String(t ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]);
 function paymentMethodLabel(m) {
   const map = { pix: 'PIX', dinheiro: 'Dinheiro', cartao: 'Cartão', boleto: 'Boleto', transferencia: 'Transferência' };
   return map[m] || m;

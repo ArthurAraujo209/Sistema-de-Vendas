@@ -30,6 +30,7 @@ export async function CampaignOrderPage(params) {
 function renderOrderForm(campaign, pixKey) {
   const content = document.getElementById('app-content');
   const customFields = campaign.customFields || [];
+  const maxInst = campaign.maxInstallments || 1;
 
   content.innerHTML = `
     <div class="order-form-page">
@@ -63,8 +64,17 @@ function renderOrderForm(campaign, pixKey) {
         </div>
         ${pixKey ? `<div class="form-group"><label>Chave PIX do vendedor:</label><p class="form-static">${esc(pixKey)}</p></div>` : ''}
         <div class="form-group">
-          <label for="payment-amount">Valor a pagar agora (deixe em branco para o total)</label>
-          <input type="number" id="payment-amount" class="form-input" step="0.01" min="0">
+          <label for="payment-installments">Parcelamento</label>
+          <select id="payment-installments" class="form-select" required>
+            ${Array.from({ length: maxInst }, (_, i) => i + 1)
+              .map(n => `<option value="${n}">${n === 1 ? 'À vista' : `${n}x de ${curr(campaign.price / n)}`}</option>`)
+              .join('')}
+          </select>
+          <small id="installment-preview" class="text-muted"></small>
+        </div>
+        <div class="form-group">
+          <label for="payment-amount">Valor a pagar agora</label>
+          <input type="number" id="payment-amount" class="form-input" step="0.01" min="0" readonly>
         </div>
         <div class="form-group">
           <label>Comprovante (imagem)</label>
@@ -86,10 +96,41 @@ function renderOrderForm(campaign, pixKey) {
 
   const qtyInput = document.getElementById('order-qty');
   const totalDisplay = document.getElementById('order-total-display');
-  qtyInput.addEventListener('input', () => {
+  const installmentSelect = document.getElementById('payment-installments');
+  const amountInput = document.getElementById('payment-amount');
+  const preview = document.getElementById('installment-preview');
+
+  function updateInstallments() {
     const qty = parseInt(qtyInput.value) || 1;
-    totalDisplay.textContent = curr(qty * campaign.price);
-  });
+    const total = qty * campaign.price;
+
+    // Reconstrói as opções apenas se a quantidade mudou
+    const key = `${qty}-${maxInst}`;
+    if (installmentSelect.dataset.key !== key) {
+      installmentSelect.dataset.key = key;
+      const currentValue = installmentSelect.value || '1';
+      installmentSelect.innerHTML = Array.from({ length: maxInst }, (_, i) => i + 1)
+        .map(n => `<option value="${n}">${n === 1 ? 'À vista' : `${n}x de ${curr(total / n)}`}</option>`)
+        .join('');
+      installmentSelect.value = Array.from(installmentSelect.options).some(o => o.value === currentValue)
+        ? currentValue : '1';
+    }
+
+    const n = parseInt(installmentSelect.value) || 1;
+    const per = total / n;
+
+    if (n === 1) {
+      preview.textContent = 'Pagamento único no valor total.';
+    } else {
+      preview.textContent = `${n} parcelas de ${curr(per)}. Você paga a primeira agora.`;
+    }
+    amountInput.value = per.toFixed(2);
+    totalDisplay.textContent = curr(total);
+  }
+
+  qtyInput.addEventListener('input', updateInstallments);
+  installmentSelect.addEventListener('change', updateInstallments);
+  updateInstallments();
 
   const receiptInput = document.getElementById('payment-receipt');
   const receiptPreview = document.getElementById('receipt-preview');
@@ -107,6 +148,7 @@ function renderOrderForm(campaign, pixKey) {
     e.preventDefault();
     const qty = parseInt(qtyInput.value) || 1;
     const total = qty * campaign.price;
+    const installments = parseInt(installmentSelect.value) || 1;
 
     const fields = customFields.map((field, idx) => {
       const input = document.querySelector(`[name="cf-${idx}"]`);
@@ -124,6 +166,7 @@ function renderOrderForm(campaign, pixKey) {
       sellerId: campaign.sellerId,
       quantity: qty,
       totalAmount: total,
+      installments,
       items: [{ quantity: qty, fields }],
       paidAmount: 0,
       remainingAmount: total,
@@ -134,8 +177,7 @@ function renderOrderForm(campaign, pixKey) {
       const newOrderId = await createClientOrder(orderData);
 
       const method = document.getElementById('payment-method').value;
-      const amountInput = document.getElementById('payment-amount');
-      let payAmount = amountInput.value ? parseFloat(amountInput.value) : total;
+      let payAmount = parseFloat(amountInput.value) || total;
       if (isNaN(payAmount) || payAmount <= 0) payAmount = total;
       payAmount = Math.min(payAmount, total);
 
@@ -155,12 +197,13 @@ function renderOrderForm(campaign, pixKey) {
           date: new Date().toISOString().split('T')[0],
           method,
           notes: receiptUrl ? `Comprovante: ${receiptUrl}` : '',
-          status: 'pending'
+          status: 'pending',
+          installmentInfo: installments > 1 ? `Parcela 1 de ${installments}` : 'À vista'
         });
       }
 
       showToast('Pedido criado com sucesso!', 'success');
-      router.navigate('/client/dashboard'); // vai para meus pedidos
+      router.navigate('/client/dashboard');
     } catch (err) {
       console.error(err);
       showToast('Erro ao criar pedido.', 'error');
@@ -190,4 +233,4 @@ function renderCustomField(field, idx) {
 }
 
 const curr = v => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-const esc = t => String(t).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[m]);
+const esc = t => String(t ?? '').replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));

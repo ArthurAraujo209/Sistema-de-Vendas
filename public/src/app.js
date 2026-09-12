@@ -1,10 +1,11 @@
 import { router } from './router.js';
 import { store } from './store.js';
 import { eventBus } from './eventBus.js';
-import { observeAuthState, getUserProfile } from './firebase/auth.js';
+import { observeAuthState, getUserProfile, resolveGoogleRedirect, applyAuthPersistence } from './firebase/auth.js';
 import { Layout } from './components/Layout.js';
 import { LoginPage } from './pages/auth/Login.js';
 import { RegisterPage } from './pages/auth/Register.js';
+import { ForgotPasswordPage } from './pages/auth/ForgotPassword.js';
 import { DashboardPage } from './pages/seller/Dashboard.js';
 import { CampaignsPage } from './pages/seller/Campaigns.js';
 import { CampaignDetailPage } from './pages/seller/CampaignDetail.js';
@@ -13,94 +14,109 @@ import { OrderDetailPage } from './pages/seller/OrderDetail.js';
 import { ClientsPage } from './pages/seller/Clients.js';
 import { ExportsPage } from './pages/seller/Exports.js';
 import { NotificationsPage } from './pages/seller/Notifications.js';
-import { SettingsPage } from './pages/seller/Settings.js';
 import { ClientDashboardPage } from './pages/client/Dashboard.js';
 import { ClientCampaignsPage } from './pages/client/Campaigns.js';
 import { ClientCampaignDetailPage } from './pages/client/CampaignDetail.js';
 import { CampaignOrderPage } from './pages/client/CampaignOrder.js';
 import { ClientOrderDetailPage } from './pages/client/OrderDetail.js';
-import { ClientProfilePage } from './pages/client/Profile.js';
-import { Loader } from './components/Loader.js';
+import { ClientExplorePage } from './pages/client/Explore.js';
+import { ClientStoreDetailPage } from './pages/client/StoreDetail.js';
+import { ProfilePage } from './pages/Profile.js';
 import { AdminDashboardPage } from './pages/admin/Dashboard.js';
 import { AdminSellersPage } from './pages/admin/Sellers.js';
 import { AdminApplicationsPage } from './pages/admin/Applications.js';
 import { SellerRequestPage } from './pages/auth/SellerRequest.js';
-import { ProfilePage } from './pages/Profile.js';
+import { NotFoundPage } from './pages/NotFound.js';
+import { Loader } from './components/Loader.js';
 import { showToast } from './components/Toast.js';
 
-// Rotas
+const PUBLIC_ROUTES = ['/login', '/register', '/forgot-password', '/seller-request'];
+
+// ===== Públicas =====
 router.addRoute('/login', () => LoginPage(), { public: true });
 router.addRoute('/register', () => RegisterPage(), { public: true });
+router.addRoute('/forgot-password', () => ForgotPasswordPage(), { public: true });
 router.addRoute('/seller-request', () => SellerRequestPage(), { public: true });
+
+// ===== Vendedor =====
 router.addRoute('/seller/dashboard', () => DashboardPage(), { role: 'seller' });
 router.addRoute('/seller/campaigns', () => CampaignsPage(), { role: 'seller' });
-router.addRoute('/seller/campaigns/:id', (params) => CampaignDetailPage(params), { role: 'seller' });
+router.addRoute('/seller/campaigns/:id', (p) => CampaignDetailPage(p), { role: 'seller' });
 router.addRoute('/seller/orders', () => OrdersPage(), { role: 'seller' });
 router.addRoute('/seller/orders/new', () => OrderDetailPage({ id: 'new' }), { role: 'seller' });
-router.addRoute('/seller/orders/:id', (params) => OrderDetailPage(params), { role: 'seller' });
+router.addRoute('/seller/orders/:id', (p) => OrderDetailPage(p), { role: 'seller' });
 router.addRoute('/seller/clients', () => ClientsPage(), { role: 'seller' });
 router.addRoute('/seller/exports', () => ExportsPage(), { role: 'seller' });
 router.addRoute('/seller/notifications', () => NotificationsPage(), { role: 'seller' });
 router.addRoute('/seller/settings', () => ProfilePage(), { role: 'seller' });
+
+// ===== Cliente =====
+router.addRoute('/client/explore', () => ClientExplorePage(), { role: 'client' });
+router.addRoute('/client/stores/:id', (p) => ClientStoreDetailPage(p), { role: 'client' });
 router.addRoute('/client/dashboard', () => ClientDashboardPage(), { role: 'client' });
-router.addRoute('/client/campaigns/:campaignId/order', (params) => CampaignOrderPage(params), { role: 'client' });
-router.addRoute('/client/campaigns/:id', (params) => ClientCampaignDetailPage(params), { role: 'client' });
+router.addRoute('/client/campaigns/:campaignId/order', (p) => CampaignOrderPage(p), { role: 'client' });
+router.addRoute('/client/campaigns/:id', (p) => ClientCampaignDetailPage(p), { role: 'client' });
 router.addRoute('/client/campaigns', () => ClientCampaignsPage(), { role: 'client' });
-router.addRoute('/client/orders/:id', (params) => ClientOrderDetailPage(params), { role: 'client' });
+router.addRoute('/client/orders/:id', (p) => ClientOrderDetailPage(p), { role: 'client' });
 router.addRoute('/client/profile', () => ProfilePage(), { role: 'client' });
+
+// ===== Admin =====
 router.addRoute('/admin/dashboard', () => AdminDashboardPage(), { role: 'admin' });
 router.addRoute('/admin/sellers', () => AdminSellersPage(), { role: 'admin' });
 router.addRoute('/admin/applications', () => AdminApplicationsPage(), { role: 'admin' });
 router.addRoute('/admin/profile', () => ProfilePage(), { role: 'admin' });
 
+// ===== Raiz =====
+router.addRoute('/', () => {
+  const user = store.get('currentUser');
+  if (!user) return router.navigate('/login');
+  if (user.role === 'admin') router.navigate('/admin/dashboard');
+  else router.navigate(user.role === 'seller' ? '/seller/dashboard' : '/client/explore');
+});
+
+router.addRoute('/:path*', () => NotFoundPage());
+
+// ===== Guarda =====
 router.beforeNavigate(async (path) => {
   const user = store.get('currentUser');
-  const publicRoutes = ['/login', '/register', '/seller-request'];
+  const isPublic = PUBLIC_ROUTES.includes(path);
 
-  // Rotas públicas – se já logado, redireciona para dashboard
-  if (publicRoutes.includes(path)) {
+  if (isPublic) {
     if (user) {
       if (user.role === 'admin') return '/admin/dashboard';
-      return user.role === 'seller' ? '/seller/dashboard' : '/client/dashboard';
+      return user.role === 'seller' ? '/seller/dashboard' : '/client/explore';
     }
     return;
   }
 
-  // Usuário não logado tentando acessar rota protegida
   if (!user) return '/login';
 
-  // Verificação de role
   if (path.startsWith('/admin') && user.role !== 'admin') return '/login';
   if (path.startsWith('/seller') && user.role !== 'seller') {
-    if (user.role === 'admin') return '/admin/dashboard';
-    return '/client/dashboard';
+    return user.role === 'admin' ? '/admin/dashboard' : '/client/explore';
   }
   if (path.startsWith('/client') && user.role !== 'client') {
-    if (user.role === 'admin') return '/admin/dashboard';
-    return '/seller/dashboard';
+    return user.role === 'admin' ? '/admin/dashboard' : '/seller/dashboard';
   }
 });
 
-router.addRoute('/', async () => {
-  const user = store.get('currentUser');
-  if (user) {
-    if (user.role === 'admin') router.navigate('/admin/dashboard');
-    else router.navigate(user.role === 'seller' ? '/seller/dashboard' : '/client/dashboard');
-  } else {
-    router.navigate('/login');
-  }
-});
-
+// ===== Init =====
 async function init() {
   const app = document.getElementById('app');
   app.innerHTML = `<div class="full-loader">${Loader('large')}</div>`;
 
-  observeAuthState(async (firebaseUser) => {
-    const currentPath = router.getCurrentPath();
-    const isPublic = ['/login', '/register', '/seller-request'].includes(currentPath);
+  await applyAuthPersistence();
+  await resolveGoogleRedirect();
 
+  observeAuthState(async (firebaseUser) => {
     if (firebaseUser) {
-      const profile = await getUserProfile(firebaseUser.uid);
+      let profile = null;
+      try {
+        profile = await getUserProfile(firebaseUser.uid);
+      } catch (err) {
+        console.error('[init profile]', err?.code || err?.message);
+      }
+
       store.update({
         currentUser: {
           uid: firebaseUser.uid,
@@ -110,41 +126,43 @@ async function init() {
         },
         userProfile: profile
       });
-
-      // Redirecionar para completar perfil se faltar telefone (cliente/vendedor)
-      const userProfile = store.get('userProfile');
-      if (userProfile && (userProfile.role === 'client' || userProfile.role === 'seller')) {
-        const needsCompletion = !userProfile.phone;
-        const profilePath = userProfile.role === 'seller' ? '/seller/settings' : '/client/profile';
-        if (needsCompletion && currentPath !== profilePath) {
-          showToast('Complete seu cadastro para continuar.', 'info');
-          router.navigate(profilePath);
-          return; // interrompe a montagem do layout até o perfil ser preenchido
-        }
-      }
     } else {
       store.update({ currentUser: null, userProfile: null });
     }
 
-    // 1️⃣ Remove todo o conteúdo antigo do #app (sidebar, header, loader, etc.)
-    const app = document.getElementById('app');
-    while (app.firstChild) {
-      app.removeChild(app.firstChild);
-    }
+    const root = document.getElementById('app');
+    while (root.firstChild) root.removeChild(root.firstChild);
 
-    // 2️⃣ Recria a estrutura correta de acordo com o estado
     if (firebaseUser) {
-      app.removeAttribute('style');
-      Layout(); // monta sidebar, header, app-content
+      root.removeAttribute('style');
+      Layout();
     } else {
-      app.style.display = 'block';
-      const appContent = document.createElement('div');
-      appContent.id = 'app-content';
-      app.appendChild(appContent);
+      root.style.display = 'block';
+      const c = document.createElement('div');
+      c.id = 'app-content';
+      root.appendChild(c);
     }
 
-    // 3️⃣ Garante que a rota seja resolvida após a criação do container
     requestAnimationFrame(() => router.resolve());
+
+    // Redireciona para completar perfil se necessário.
+    // Usa o flag profileCompleted gravado no doc do usuário.
+    if (firebaseUser) {
+      const prof = store.get('userProfile');
+      if (prof && prof.role !== 'admin') {
+        const profilePath = prof.role === 'seller' ? '/seller/settings' : '/client/profile';
+        const currentPath = router.getCurrentPath();
+        const needsCompletion = !prof.profileCompleted;
+
+        if (needsCompletion && currentPath !== profilePath) {
+          showToast(
+            prof.phone ? 'Bem-vindo! Confira seus dados para continuar.' : 'Complete seu perfil para continuar.',
+            'info'
+          );
+          router.navigate(profilePath);
+        }
+      }
+    }
   });
 }
 

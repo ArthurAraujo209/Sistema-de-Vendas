@@ -3,6 +3,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Toast.js';
 import { ConfirmDialog } from '../../components/Modal.js';
 import { Loader } from '../../components/Loader.js';
+import { thumbUrl } from '../../utils/imageUtils.js';
 
 export async function CampaignsPage() {
   const content = document.getElementById('app-content');
@@ -50,12 +51,8 @@ export async function CampaignsPage() {
     const status = document.getElementById('filter-status').value;
 
     let filtered = allCampaigns;
-    if (search) {
-      filtered = filtered.filter(c => c.title?.toLowerCase().includes(search));
-    }
-    if (status) {
-      filtered = filtered.filter(c => c.status === status);
-    }
+    if (search) filtered = filtered.filter(c => c.title?.toLowerCase().includes(search));
+    if (status) filtered = filtered.filter(c => c.status === status);
 
     renderCampaignsTable(filtered);
   }
@@ -86,8 +83,8 @@ export async function CampaignsPage() {
           ${campaigns.map(c => `
             <tr>
               <td>
-                ${c.images && c.images.length 
-                  ? `<img src="${escapeHtml(c.images[0])}" class="campaign-thumb" onerror="this.style.display='none'" alt="Capa">` 
+                ${c.images && c.images.length
+                  ? `<img src="${thumbUrl(c.images[0], 120)}" loading="lazy" decoding="async" class="campaign-thumb" onerror="this.style.display='none'" alt="Capa">`
                   : `<div class="campaign-thumb-placeholder">📷</div>`}
               </td>
               <td><strong>${escapeHtml(c.title)}</strong></td>
@@ -165,20 +162,16 @@ function statusLabel(status) {
   const map = { draft: 'Rascunho', open: 'Aberta', closed: 'Encerrada', archived: 'Arquivada' };
   return map[status] || status;
 }
-
 function formatDate(dateStr) {
   if (!dateStr) return '-';
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('pt-BR');
+  return new Date(dateStr).toLocaleDateString('pt-BR');
 }
-
 function formatCurrency(value) {
   if (value === undefined || value === null) return '-';
   return Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
-
 function escapeHtml(text) {
-  return String(text).replace(/[&<>"]/g, function(m) {
-    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m];
+  return String(text ?? '').replace(/[&<>"']/g, function(m) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m];
   });
 }

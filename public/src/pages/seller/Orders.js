@@ -3,6 +3,7 @@ import { router } from '../../router.js';
 import { showToast } from '../../components/Toast.js';
 import { Loader } from '../../components/Loader.js';
 import { ConfirmDialog } from '../../components/Modal.js';
+import { whatsappLink } from '../../utils/imageUtils.js';
 
 export async function OrdersPage() {
   const content = document.getElementById('app-content');
@@ -84,7 +85,7 @@ export async function OrdersPage() {
     const search = document.getElementById('search-orders').value.toLowerCase();
     let filtered = allOrders;
     if (search) {
-      filtered = filtered.filter(o => 
+      filtered = filtered.filter(o =>
         (o.clientName || '').toLowerCase().includes(search) ||
         (o.campaignTitle || '').toLowerCase().includes(search)
       );
@@ -110,29 +111,37 @@ export async function OrdersPage() {
             <th>Valor</th>
             <th>Status</th>
             <th>Data</th>
-            <th></th>
+            <th>Ações</th>
           </tr>
         </thead>
         <tbody>
-          ${orders.map(o => `
-            <tr>
-              <td><input type="checkbox" class="order-check" data-id="${o.id}" data-status="${o.status}"></td>
-              <td>${esc(o.clientName)}</td>
-              <td>${esc(o.campaignTitle)}</td>
-              <td>${o.quantity || 1}</td>
-              <td>${curr(o.totalAmount)}</td>
-              <td><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></td>
-              <td>${fmtDate(o.createdAt)}</td>
-              <td class="actions-cell">
-                <button class="btn btn-sm btn-outline view-order" data-id="${o.id}">Ver</button>
-              </td>
-            </tr>
-          `).join('')}
+          ${orders.map(o => {
+            const remaining = (o.remainingAmount ?? (o.totalAmount - (o.paidAmount || 0))) || 0;
+            const hasDebt = remaining > 0 && o.status !== 'cancelled';
+            const waHref = o.clientPhone
+              ? whatsappLink(o.clientPhone, buildChargeMessage(o, remaining))
+              : '';
+            return `
+              <tr>
+                <td><input type="checkbox" class="order-check" data-id="${o.id}" data-status="${o.status}"></td>
+                <td>${esc(o.clientName)}</td>
+                <td>${esc(o.campaignTitle)}</td>
+                <td>${o.quantity || 1}</td>
+                <td>${curr(o.totalAmount)}</td>
+                <td><span class="badge badge-${o.status}">${statusLabel(o.status)}</span></td>
+                <td>${fmtDate(o.createdAt)}</td>
+                <td class="actions-cell">
+                  <button class="btn btn-sm btn-outline view-order" data-id="${o.id}">Ver</button>
+                  ${hasDebt && waHref ? `<a href="${waHref}" target="_blank" rel="noopener" class="btn btn-sm btn-success" title="Cobrar via WhatsApp">💬 Cobrar</a>` : ''}
+                  ${hasDebt && !waHref ? `<button class="btn btn-sm btn-outline charge-no-phone" data-id="${o.id}" title="Cliente sem telefone cadastrado">💬 Cobrar</button>` : ''}
+                </td>
+              </tr>
+            `;
+          }).join('')}
         </tbody>
       </table>
     `;
 
-    // Eventos de seleção
     const selectAllCheck = document.getElementById('select-all');
     const checkboxes = listEl.querySelectorAll('.order-check');
     const batchDiv = document.getElementById('batch-actions');
@@ -150,7 +159,6 @@ export async function OrdersPage() {
     });
     checkboxes.forEach(cb => cb.addEventListener('change', updateBatchVisibility));
 
-    // Aplicar lote
     document.getElementById('apply-batch').addEventListener('click', async () => {
       const newStatus = document.getElementById('batch-status').value;
       if (!newStatus) return showToast('Selecione um status.', 'warning');
@@ -177,9 +185,14 @@ export async function OrdersPage() {
       });
     });
 
-    // Links
-    listEl.querySelectorAll('.view-order').forEach(btn => btn.addEventListener('click', () => router.navigate(`/seller/orders/${btn.dataset.id}`)));
-    listEl.querySelectorAll('.edit-order').forEach(btn => btn.addEventListener('click', () => router.navigate(`/seller/orders/${btn.dataset.id}/edit`)));
+    listEl.querySelectorAll('.view-order').forEach(btn =>
+      btn.addEventListener('click', () => router.navigate(`/seller/orders/${btn.dataset.id}`))
+    );
+    listEl.querySelectorAll('.charge-no-phone').forEach(btn =>
+      btn.addEventListener('click', () =>
+        showToast('Cliente sem telefone. Peça para atualizar o perfil.', 'warning')
+      )
+    );
 
     updateBatchVisibility();
   }
@@ -191,6 +204,24 @@ export async function OrdersPage() {
   await loadData();
 }
 
+// ===== Helpers =====
+
+function buildChargeMessage(order, remaining) {
+  const firstName = (order.clientName || '').split(' ')[0] || 'tudo bem';
+  const shortId = order.id.substring(0, 6);
+  const total = curr(order.totalAmount);
+  const paid = curr(order.paidAmount || 0);
+  const falta = curr(remaining);
+
+  return `Oi ${firstName}! Passando para falar sobre o seu pedido *#${shortId}* da campanha "${order.campaignTitle}".
+
+Total: ${total}
+Pago: ${paid}
+*Falta: ${falta}*
+
+Quando puder, me avisa! Qualquer dúvida estou à disposição 😊`;
+}
+
 const statusLabel = s => ({
   awaiting_payment:'Aguardando pagamento', partial_payment:'Pagamento parcial', paid:'Pago',
   sent_to_factory:'Enviado p/ fábrica', in_production:'Em produção',
@@ -198,5 +229,5 @@ const statusLabel = s => ({
   available_for_pickup:'Disponível p/ retirada', delivered:'Entregue', cancelled:'Cancelado'
 }[s] || s);
 const fmtDate = d => d ? new Date(d).toLocaleDateString('pt-BR') : '-';
-const curr = v => Number(v).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
-const esc = t => String(t).replace(/[&<>"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[m]);
+const curr = v => Number(v || 0).toLocaleString('pt-BR', { style:'currency', currency:'BRL' });
+const esc = t => String(t ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]);
