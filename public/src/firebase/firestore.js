@@ -65,7 +65,6 @@ export async function createOrder(data) {
   const sellerId = getSellerId();
   const now = new Date().toISOString();
 
-  // Busca dados do cliente direto do Firestore (não confia no payload)
   let clientPhone = '';
   let clientEmail = '';
   if (data.clientId) {
@@ -138,6 +137,7 @@ export async function updateOrder(id, data, changeDescription) {
   if (data.status && data.status !== current.status && current.clientId) {
     const statusLabel = {
       awaiting_payment: 'Aguardando pagamento',
+      payment_under_review: 'Comprovante em análise',
       partial_payment: 'Pagamento parcial',
       paid: 'Pago',
       sent_to_factory: 'Enviado para fábrica',
@@ -178,10 +178,15 @@ export async function addPayment(orderId, paymentData) {
 
   const existingPayments = await getDocs(paymentsRef);
   let currentPaid = 0;
-  existingPayments.forEach(doc => { currentPaid += doc.data().amount || 0; });
+  existingPayments.forEach(doc => {
+    const p = doc.data();
+    // Só soma o que está confirmado (verified !== false)
+    if (p.verified !== false) currentPaid += p.amount || 0;
+  });
 
   const newAmount = paymentData.amount || 0;
-  const newPaidTotal = currentPaid + newAmount;
+  const isVerified = paymentData.verified !== false;
+  const newPaidTotal = currentPaid + (isVerified ? newAmount : 0);
 
   const orderSnap = await getDoc(orderRef);
   if (!orderSnap.exists()) throw new Error('Pedido não encontrado');
@@ -193,6 +198,7 @@ export async function addPayment(orderId, paymentData) {
   const newPaymentRef = doc(paymentsRef);
   batch.set(newPaymentRef, {
     ...paymentData,
+    verified: isVerified,
     createdAt: new Date().toISOString()
   });
   batch.update(orderRef, {
@@ -202,13 +208,13 @@ export async function addPayment(orderId, paymentData) {
   });
   await batch.commit();
 
-  await updateOrder(orderId, {}, `Pagamento de ${formatCurrency(newAmount)} adicionado (${paymentData.method || 'não informado'})`);
+  await updateOrder(orderId, {}, `Pagamento de ${formatCurrency(newAmount)} registrado (${paymentData.method || 'não informado'})`);
 
   if (order.sellerId) {
     try {
       await createNotification(order.sellerId, {
         type: 'new_payment',
-        title: 'Novo pagamento recebido',
+        title: isVerified ? 'Novo pagamento recebido' : 'Novo comprovante em análise',
         message: `Pagamento de ${formatCurrency(newAmount)} no pedido #${orderId.substring(0,6)}.`,
         link: `/seller/orders/${orderId}`
       });
@@ -218,6 +224,45 @@ export async function addPayment(orderId, paymentData) {
   }
 
   return newPaymentRef.id;
+}
+
+export async function confirmPayment(orderId, paymentId) {
+  const paymentsRef = collection(db, `orders/${orderId}/payments`);
+  const payRef = doc(paymentsRef, paymentId);
+  const paySnap = await getDoc(payRef);
+  if (!paySnap.exists()) throw new Error('Pagamento não encontrado');
+  const payment = paySnap.data();
+  if (payment.verified !== false) return;
+
+  // Marca como verificado
+  await updateDoc(payRef, { verified: true, verifiedAt: new Date().toISOString() });
+
+  // Recalcula totais
+  const all = await getDocs(paymentsRef);
+  let totalPaid = 0;
+  all.forEach(d => {
+    const p = d.data();
+    if (d.id === paymentId) {
+      // Já consideramos este como confirmado
+      totalPaid += p.amount || 0;
+    } else if (p.verified !== false) {
+      totalPaid += p.amount || 0;
+    }
+  });
+
+  const orderRef = doc(db, 'orders', orderId);
+  const orderSnap = await getDoc(orderRef);
+  const order = orderSnap.data();
+  const total = order.totalAmount || 0;
+  const remaining = Math.max(0, total - totalPaid);
+
+  await updateDoc(orderRef, {
+    paidAmount: totalPaid,
+    remainingAmount: remaining,
+    updatedAt: new Date().toISOString()
+  });
+
+  await updateOrder(orderId, {}, `Pagamento de ${formatCurrency(payment.amount)} confirmado`);
 }
 
 export async function getPayments(orderId) {
@@ -244,6 +289,7 @@ export async function createClientUser(email, displayName, phone = '') {
     displayName,
     phone,
     role: 'client',
+    profileCompleted: !!(displayName && phone),
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   });
@@ -252,7 +298,11 @@ export async function createClientUser(email, displayName, phone = '') {
 
 // ========== Cliente ==========
 export async function getOpenCampaigns() {
-  const q = query(collection(db, 'campaigns'), where('status', '==', 'open'), orderBy('createdAt', 'desc'));
+  const q = query(
+    collection(db, 'campaigns'),
+    where('status', 'in', ['open', 'scheduled']),
+    orderBy('createdAt', 'desc')
+  );
   const snapshot = await getDocs(q);
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 }
@@ -262,8 +312,6 @@ export async function createClientOrder(data) {
   const clientId = current.uid;
   let profile = store.get('userProfile') || {};
 
-  // Fallback: se o profile local está vazio/sem telefone, busca direto do Firestore.
-  // Isso resolve o caso de race condition no primeiro login após o registro.
   if (!profile.phone) {
     try {
       const snap = await getDoc(doc(db, 'users', clientId));
@@ -277,13 +325,14 @@ export async function createClientOrder(data) {
   }
 
   const now = new Date().toISOString();
+  const status = data.status || 'awaiting_payment';
 
   const orderData = {
     ...data,
     clientId,
     clientPhone: profile.phone || data.clientPhone || '',
     clientEmail: profile.email || current.email || '',
-    status: 'awaiting_payment',
+    status,
     createdAt: now,
     updatedAt: now,
     history: [{
@@ -331,7 +380,7 @@ export async function cancelClientOrder(orderId) {
   if (!snap.exists()) throw new Error('Pedido não encontrado');
   const order = snap.data();
   if (order.clientId !== clientId) throw new Error('Acesso negado');
-  if (!['awaiting_payment', 'partial_payment', 'paid'].includes(order.status)) {
+  if (!['awaiting_payment', 'payment_under_review', 'partial_payment', 'paid'].includes(order.status)) {
     throw new Error('Não é possível cancelar este pedido.');
   }
   const historyEntry = {
@@ -357,6 +406,22 @@ export async function cancelClientOrder(orderId) {
     } catch (err) {
       console.warn('[notif order_cancelled]', err?.code || err?.message);
     }
+  }
+}
+
+// ========== Config do vendedor (PIX + métodos) ==========
+export async function getSellerPaymentConfig(sellerId) {
+  try {
+    const snap = await getDoc(doc(db, 'users', sellerId));
+    if (!snap.exists()) return { pixKey: '', paymentMethods: [] };
+    const u = snap.data();
+    return {
+      pixKey: u.pixKey || '',
+      paymentMethods: Array.isArray(u.paymentMethods) ? u.paymentMethods : []
+    };
+  } catch (err) {
+    console.warn('[seller payment config]', err?.code || err?.message);
+    return { pixKey: '', paymentMethods: [] };
   }
 }
 
@@ -425,7 +490,7 @@ export async function getOpenCampaignsBySeller(sellerId) {
   const q = query(
     collection(db, 'campaigns'),
     where('sellerId', '==', sellerId),
-    where('status', '==', 'open'),
+    where('status', 'in', ['open', 'scheduled']),
     orderBy('createdAt', 'desc')
   );
   const snap = await getDocs(q);

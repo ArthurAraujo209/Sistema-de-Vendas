@@ -2,7 +2,7 @@ import {
   getOrder, createOrder, updateOrder, deleteOrder,
   getCampaigns, getCampaign,
   getUserByEmail, createClientUser,
-  addPayment, getPayments
+  addPayment, getPayments, confirmPayment
 } from '../../firebase/firestore.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Toast.js';
@@ -193,7 +193,7 @@ async function renderOrderDetail(orderId) {
 function renderEditOrderForm(order, campaign, payments) {
   const content = document.getElementById('app-content');
   const statusOptions = [
-    'awaiting_payment','partial_payment','paid','sent_to_factory',
+    'awaiting_payment','payment_under_review','partial_payment','paid','sent_to_factory',
     'in_production','production_completed','in_transit',
     'available_for_pickup','delivered','cancelled'
   ];
@@ -206,6 +206,8 @@ function renderEditOrderForm(order, campaign, payments) {
     ? whatsappLink(order.clientPhone, buildChargeMessage(order, remaining))
     : '';
 
+  const unverifiedCount = payments.filter(p => p.verified === false).length;
+
   content.innerHTML = `
     <div class="order-detail-page">
       <div class="page-header">
@@ -216,6 +218,14 @@ function renderEditOrderForm(order, campaign, payments) {
           <button id="delete-order-btn" class="btn btn-danger">Excluir Pedido</button>
         </div>
       </div>
+
+      ${unverifiedCount > 0 ? `
+        <div class="card" style="border-color: var(--warning); background: #fffbeb;">
+          <strong>⚠️ ${unverifiedCount} comprovante(s) aguardando confirmação</strong>
+          <p style="font-size:0.9rem; margin-top:0.35rem;">Confira o comprovante e clique em <strong>Confirmar</strong> na seção de pagamentos abaixo.</p>
+        </div>
+      ` : ''}
+
       <div class="card">
         <h3>Detalhes</h3>
         <p><strong>Cliente:</strong> ${esc(order.clientName)}</p>
@@ -243,7 +253,7 @@ function renderEditOrderForm(order, campaign, payments) {
         <div id="payments-list">
           ${payments.length ? `
             <table class="table">
-              <thead><tr><th>Data</th><th>Valor</th><th>Forma</th><th>Observações</th></tr></thead>
+              <thead><tr><th>Data</th><th>Valor</th><th>Forma</th><th>Comprovante</th><th>Status</th></tr></thead>
               <tbody>
                 ${payments.map(p => `
                   <tr>
@@ -253,6 +263,9 @@ function renderEditOrderForm(order, campaign, payments) {
                     <td>${p.notes && p.notes.includes('Comprovante:')
                       ? `<img src="${esc(p.notes.split('Comprovante: ')[1])}" class="payment-thumb" onclick="window.open('${esc(p.notes.split('Comprovante: ')[1])}')">`
                       : (esc(p.notes || '-'))}</td>
+                    <td>${p.verified === false
+                      ? `<button class="btn btn-sm btn-primary confirm-payment-btn" data-id="${p.id}">Confirmar</button>`
+                      : '<span class="badge badge-paid">Confirmado</span>'}</td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -299,6 +312,24 @@ function renderEditOrderForm(order, campaign, payments) {
     openPaymentModal(order.id, paid, total);
   });
 
+  // Botões de confirmar pagamento
+  content.querySelectorAll('.confirm-payment-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      btn.textContent = 'Confirmando...';
+      try {
+        await confirmPayment(order.id, btn.dataset.id);
+        showToast('Pagamento confirmado!', 'success');
+        await renderOrderDetail(order.id);
+      } catch (err) {
+        console.error(err);
+        showToast('Erro ao confirmar pagamento.', 'error');
+        btn.disabled = false;
+        btn.textContent = 'Confirmar';
+      }
+    });
+  });
+
   const noPhoneBtn = document.getElementById('no-phone-btn');
   if (noPhoneBtn) {
     noPhoneBtn.addEventListener('click', () => {
@@ -334,6 +365,9 @@ function openPaymentModal(orderId, currentPaid, totalAmount) {
         <label for="payment-notes">Observações</label>
         <input type="text" id="payment-notes" class="form-input">
       </div>
+      <div class="form-check" style="margin-bottom:1rem;">
+        <label><input type="checkbox" id="payment-verified" checked> Marcar como confirmado (recebido)</label>
+      </div>
       <div class="modal-footer" style="padding: 1rem 0 0; border-top: none;">
         <button type="button" class="btn btn-secondary" data-close-modal>Cancelar</button>
         <button type="submit" class="btn btn-primary">Registrar Pagamento</button>
@@ -360,7 +394,8 @@ function openPaymentModal(orderId, currentPaid, totalAmount) {
       amount,
       date: modal.content.querySelector('#payment-date').value,
       method: modal.content.querySelector('#payment-method').value,
-      notes: modal.content.querySelector('#payment-notes').value
+      notes: modal.content.querySelector('#payment-notes').value,
+      verified: modal.content.querySelector('#payment-verified').checked
     };
 
     try {
@@ -388,7 +423,7 @@ Quando puder, me avisa! Qualquer dúvida estou à disposição 😊`;
 }
 
 const statusLabel = s => ({
-  awaiting_payment:'Aguardando pagamento', partial_payment:'Pagamento parcial', paid:'Pago',
+  awaiting_payment:'Aguardando pagamento', payment_under_review:'Comprovante em análise', partial_payment:'Pagamento parcial', paid:'Pago',
   sent_to_factory:'Enviado p/ fábrica', in_production:'Em produção',
   production_completed:'Produção concluída', in_transit:'Em transporte',
   available_for_pickup:'Disponível p/ retirada', delivered:'Entregue', cancelled:'Cancelado'

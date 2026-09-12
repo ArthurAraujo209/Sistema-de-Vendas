@@ -4,10 +4,13 @@ import { Loader } from '../../components/Loader.js';
 import { imgTag } from '../../utils/imageUtils.js';
 
 let currentTab = 'campaigns';
+let countdownTimer = null;
 
 export async function ClientExplorePage() {
   const content = document.getElementById('app-content');
   content.innerHTML = `<div class="loader-container">${Loader()}</div>`;
+
+  if (countdownTimer) { clearInterval(countdownTimer); countdownTimer = null; }
 
   try {
     const [campaigns, sellers] = await Promise.all([
@@ -58,32 +61,48 @@ function renderTabContent(campaigns, sellers) {
   const container = document.getElementById('explore-content');
   if (currentTab === 'campaigns') {
     if (!campaigns.length) {
-      container.innerHTML = '<div class="empty-state">Nenhuma campanha ativa no momento.</div>';
+      container.innerHTML = '<div class="empty-state">Nenhuma campanha disponível no momento.</div>';
       return;
     }
     container.innerHTML = `
       <div class="campaigns-grid">
-        ${campaigns.map(c => `
-          <div class="card campaign-card">
-            ${c.images?.[0]
-              ? `<div class="img-wrap">${imgTag(c.images[0], { alt: c.title, width: 500, className: 'campaign-cover' })}</div>`
-              : `<div class="campaign-cover-placeholder">📷</div>`}
-            <div class="card-body">
-              <h2>${esc(c.title)}</h2>
-              <p class="campaign-description">${esc((c.description || '').slice(0, 100))}</p>
-              <div class="campaign-meta">
-                <span><strong>${curr(c.price)}</strong></span>
-                <span>${fmtDate(c.estimatedDelivery)}</span>
+        ${campaigns.map(c => {
+          const isScheduled = c.status === 'scheduled';
+          return `
+            <div class="card campaign-card">
+              ${c.images?.[0]
+                ? `<div class="img-wrap">${imgTag(c.images[0], { alt: c.title, width: 500, className: 'campaign-cover' })}</div>`
+                : `<div class="campaign-cover-placeholder">📷</div>`}
+              <div class="card-body">
+                ${isScheduled ? `<span class="badge badge-scheduled" style="margin-bottom:0.5rem;">Em breve</span>` : ''}
+                <h2>${esc(c.title)}</h2>
+                <p class="campaign-description">${esc((c.description || '').slice(0, 100))}</p>
+                <div class="campaign-meta">
+                  <span><strong>${curr(c.price)}</strong></span>
+                  <span>${fmtDate(c.estimatedDelivery)}</span>
+                </div>
+                ${isScheduled
+                  ? `<div class="countdown" data-open="${esc(c.openDate || '')}" data-campaign="${esc(c.id)}">
+                       <div class="countdown-label">Abre em</div>
+                       <div class="countdown-timer">
+                         <span class="cd-seg" data-seg="d">--</span><span class="cd-unit">d</span>
+                         <span class="cd-seg" data-seg="h">--</span><span class="cd-unit">h</span>
+                         <span class="cd-seg" data-seg="m">--</span><span class="cd-unit">m</span>
+                         <span class="cd-seg" data-seg="s">--</span><span class="cd-unit">s</span>
+                       </div>
+                     </div>
+                     <button class="btn btn-outline btn-block view-campaign-btn" data-id="${c.id}">Ver detalhes</button>`
+                  : `<button class="btn btn-primary btn-block view-campaign-btn" data-id="${c.id}">Ver campanha</button>`}
               </div>
-              <button class="btn btn-primary btn-block view-campaign-btn" data-id="${c.id}">Ver campanha</button>
             </div>
-          </div>
-        `).join('')}
+          `;
+        }).join('')}
       </div>
     `;
     container.querySelectorAll('.view-campaign-btn').forEach(btn =>
       btn.addEventListener('click', () => router.navigate(`/client/campaigns/${btn.dataset.id}`))
     );
+    startCountdowns(container);
   } else {
     if (!sellers.length) {
       container.innerHTML = '<div class="empty-state">Nenhuma loja ativa no momento.</div>';
@@ -112,6 +131,39 @@ function renderTabContent(campaigns, sellers) {
       btn.addEventListener('click', () => router.navigate(`/client/stores/${btn.dataset.id}`))
     );
   }
+}
+
+function startCountdowns(container) {
+  const items = container.querySelectorAll('.countdown');
+  if (!items.length) return;
+
+  const update = () => {
+    const now = Date.now();
+    items.forEach(el => {
+      const openDate = el.dataset.open;
+      const target = openDate ? new Date(openDate + 'T00:00:00').getTime() : 0;
+      const diff = target - now;
+
+      const set = (seg, val) => {
+        const s = el.querySelector(`[data-seg="${seg}"]`);
+        if (s) s.textContent = String(val).padStart(2, '0');
+      };
+
+      if (!target || diff <= 0) {
+        el.innerHTML = '<div class="countdown-label" style="color:var(--success); font-weight:700;">Disponível agora!</div>';
+      } else {
+        const s = Math.floor(diff / 1000);
+        const d = Math.floor(s / 86400);
+        const h = Math.floor((s % 86400) / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        const sec = s % 60;
+        set('d', d); set('h', h); set('m', m); set('s', sec);
+      }
+    });
+  };
+
+  update();
+  countdownTimer = setInterval(update, 1000);
 }
 
 const curr = v => Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });

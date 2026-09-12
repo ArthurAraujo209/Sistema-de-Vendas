@@ -7,6 +7,14 @@ import { showToast } from '../components/Toast.js';
 import { Loader } from '../components/Loader.js';
 import { router } from '../router.js';
 
+const PAYMENT_METHODS = [
+  { id: 'pix', label: 'PIX' },
+  { id: 'dinheiro', label: 'Dinheiro' },
+  { id: 'cartao', label: 'Cartão' },
+  { id: 'boleto', label: 'Boleto' },
+  { id: 'transferencia', label: 'Transferência' }
+];
+
 export async function ProfilePage() {
   const content = document.getElementById('app-content');
   content.innerHTML = `<div class="loader-container">${Loader()}</div>`;
@@ -17,6 +25,10 @@ export async function ProfilePage() {
 
   const isSeller = user.role === 'seller';
   const isAdmin = user.role === 'admin';
+
+  const savedMethods = Array.isArray(profile.paymentMethods) && profile.paymentMethods.length
+    ? profile.paymentMethods
+    : ['pix'];
 
   content.innerHTML = `
     <div class="profile-page">
@@ -63,9 +75,27 @@ export async function ProfilePage() {
             <label for="profile-instagram">Instagram</label>
             <input type="text" id="profile-instagram" class="form-input" value="${esc(profile.instagram || '')}" placeholder="@sualoja">
           </div>
+
+          <h3 style="margin-top:1.5rem; margin-bottom:1rem;">Pagamentos aceitos</h3>
+          <p class="text-muted" style="font-size:0.85rem; margin-bottom:0.75rem;">
+            Selecione os métodos que você aceita. O cliente só verá essas opções ao fazer o pedido.
+          </p>
+
+          <div class="form-group">
+            <div class="payment-methods-grid">
+              ${PAYMENT_METHODS.map(m => `
+                <label class="payment-check">
+                  <input type="checkbox" name="pm" value="${m.id}" ${savedMethods.includes(m.id) ? 'checked' : ''}>
+                  <span>${m.label}</span>
+                </label>
+              `).join('')}
+            </div>
+          </div>
+
           <div class="form-group">
             <label for="profile-pix">Chave PIX</label>
-            <input type="text" id="profile-pix" class="form-input" value="${esc(profile.pixKey || '')}" placeholder="CPF, e-mail, telefone...">
+            <input type="text" id="profile-pix" class="form-input" value="${esc(profile.pixKey || '')}" placeholder="CPF, e-mail, telefone ou chave aleatória">
+            <small class="text-muted">Será exibida ao cliente quando o método PIX estiver habilitado.</small>
           </div>
         ` : ''}
 
@@ -106,6 +136,13 @@ export async function ProfilePage() {
       updates.description = document.getElementById('profile-description').value.trim();
       updates.instagram = document.getElementById('profile-instagram').value.trim();
       updates.pixKey = document.getElementById('profile-pix').value.trim();
+
+      const selected = Array.from(document.querySelectorAll('input[name="pm"]:checked')).map(i => i.value);
+      if (!selected.length) return showToast('Selecione pelo menos um método de pagamento.', 'error');
+      if (selected.includes('pix') && !updates.pixKey) {
+        return showToast('Informe a chave PIX para aceitar pagamentos via PIX.', 'error');
+      }
+      updates.paymentMethods = selected;
     }
 
     const photoFile = photoInput.files[0];
@@ -130,7 +167,6 @@ export async function ProfilePage() {
       });
       showToast('Perfil salvo!', 'success');
 
-      // Se o perfil acabou de ser completado (estava incompleto), redireciona para a home
       const justCompleted = !wasComplete && saved.profileCompleted;
       if (justCompleted) {
         let homePath = '/client/explore';
@@ -138,7 +174,6 @@ export async function ProfilePage() {
         else if (user.role === 'admin') homePath = '/admin/dashboard';
         setTimeout(() => router.navigate(homePath), 400);
       } else {
-        // Só esconde o aviso se já estava completo
         const card = document.getElementById('profile-incomplete-card');
         if (card) card.style.display = saved.profileCompleted ? 'none' : 'block';
       }

@@ -28,8 +28,9 @@ export async function CampaignDetailPage(params) {
 function renderForm(campaign) {
   const isNew = !campaign;
   const title = isNew ? 'Nova Campanha' : `Editando: ${campaign.title}`;
-  const canEdit = isNew || campaign.status === 'draft' || campaign.status === 'open';
+  const canEdit = isNew || campaign.status === 'draft' || campaign.status === 'open' || campaign.status === 'scheduled';
   const maxInst = campaign?.maxInstallments || 1;
+  const currentStatus = campaign?.status || 'draft';
 
   const content = document.getElementById('app-content');
   content.innerHTML = `
@@ -47,10 +48,12 @@ function renderForm(campaign) {
           <div class="form-group">
             <label for="camp-status">Status</label>
             <select id="camp-status" class="form-select" ${!canEdit ? 'disabled' : ''}>
-              <option value="draft" ${campaign?.status === 'draft' ? 'selected' : ''}>Rascunho</option>
-              <option value="open" ${campaign?.status === 'open' ? 'selected' : ''}>Aberta</option>
-              <option value="closed" ${campaign?.status === 'closed' ? 'selected' : ''}>Encerrada</option>
+              <option value="draft" ${currentStatus === 'draft' ? 'selected' : ''}>Rascunho</option>
+              <option value="scheduled" ${currentStatus === 'scheduled' ? 'selected' : ''}>Agendada (só visualização)</option>
+              <option value="open" ${currentStatus === 'open' ? 'selected' : ''}>Aberta</option>
+              <option value="closed" ${currentStatus === 'closed' ? 'selected' : ''}>Encerrada</option>
             </select>
+            <small class="text-muted" id="status-help"></small>
           </div>
         </div>
         <div class="form-group">
@@ -114,6 +117,22 @@ function renderForm(campaign) {
       </form>
     </div>
   `;
+
+  // Explicação dinâmica do status
+  const statusSelect = document.getElementById('camp-status');
+  const statusHelp = document.getElementById('status-help');
+  function updateStatusHelp() {
+    const v = statusSelect.value;
+    const map = {
+      draft: 'Visível apenas para você. Nenhum cliente vê.',
+      scheduled: 'Cliente vê a campanha e um cronômetro regressivo até a data de abertura, mas não pode comprar.',
+      open: 'Cliente vê e pode comprar normalmente.',
+      closed: 'Vendedor pode gerenciar pedidos, mas clientes não podem criar novos.'
+    };
+    statusHelp.textContent = map[v] || '';
+  }
+  statusSelect.addEventListener('change', updateStatusHelp);
+  updateStatusHelp();
 
   document.getElementById('back-to-campaigns').addEventListener('click', () => router.navigate('/seller/campaigns'));
 
@@ -273,14 +292,22 @@ function addCustomFieldRow() {
 async function handleSubmit(e) {
   e.preventDefault();
   const isNew = campaignId === 'new';
+  const status = document.getElementById('camp-status').value;
+  const openDate = document.getElementById('camp-open-date').value;
+
+  if (status === 'scheduled' && !openDate) {
+    showToast('Defina a data de abertura para campanhas agendadas.', 'error');
+    return;
+  }
+
   const data = {
     title: document.getElementById('camp-title').value.trim(),
-    status: document.getElementById('camp-status').value,
+    status,
     description: document.getElementById('camp-description').value.trim(),
     price: parseFloat(document.getElementById('camp-price').value) || 0,
     cost: parseFloat(document.getElementById('camp-cost').value) || 0,
     maxInstallments: parseInt(document.getElementById('camp-max-installments').value) || 1,
-    openDate: document.getElementById('camp-open-date').value,
+    openDate,
     closeDate: document.getElementById('camp-close-date').value,
     estimatedDelivery: document.getElementById('camp-estimated-delivery').value,
     images: document.getElementById('camp-images').value.split('\n').map(u => u.trim()).filter(Boolean),

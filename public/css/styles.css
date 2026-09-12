@@ -809,3 +809,96 @@ input, select, textarea, button { font-family: inherit; font-size: inherit; }
   background: var(--bg-secondary);
   color: #fde68a;
 }
+
+/* ========== Pagamento: métodos + PIX ========== */
+.payment-methods-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.5rem;
+}
+.payment-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  font-weight: 500;
+}
+.payment-check:hover { border-color: var(--primary); }
+.payment-check input:checked ~ span { color: var(--primary); font-weight: 600; }
+.payment-check input { accent-color: var(--primary); }
+
+.pix-copy-box {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--bg-tertiary);
+  border: 1px dashed var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.35rem;
+}
+.pix-copy-box code {
+  flex: 1;
+  font-size: 0.9rem;
+  word-break: break-all;
+  color: var(--text-primary);
+}
+
+/* ========== Countdown ========== */
+.countdown, .countdown-big {
+  text-align: center;
+  padding: 1rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius);
+  margin-bottom: 0.75rem;
+}
+.countdown-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.countdown-timer {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0.15rem;
+}
+.cd-seg {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  min-width: 2ch;
+}
+.cd-unit {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-right: 0.4rem;
+  text-transform: lowercase;
+}
+
+/* ========== Badges novos ========== */
+.badge-payment_under_review {
+  background: #fef3c7;
+  color: #92400e;
+}
+[data-theme="dark"] .badge-payment_under_review {
+  background: #78350f;
+  color: #fde68a;
+}
+
+.badge-scheduled {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+[data-theme="dark"] .badge-scheduled {
+  background: #1e1b4b;
+  color: #c7d2fe;
+}

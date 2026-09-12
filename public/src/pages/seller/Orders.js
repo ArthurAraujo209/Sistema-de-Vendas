@@ -18,6 +18,7 @@ export async function OrdersPage() {
         <select class="form-select" id="filter-status">
           <option value="">Todos os status</option>
           <option value="awaiting_payment">Aguardando pagamento</option>
+          <option value="payment_under_review">Comprovante em análise</option>
           <option value="partial_payment">Pagamento parcial</option>
           <option value="paid">Pago</option>
           <option value="sent_to_factory">Enviado p/ fábrica</option>
@@ -133,7 +134,7 @@ export async function OrdersPage() {
                 <td class="actions-cell">
                   <button class="btn btn-sm btn-outline view-order" data-id="${o.id}">Ver</button>
                   ${hasDebt && waHref ? `<a href="${waHref}" target="_blank" rel="noopener" class="btn btn-sm btn-success" title="Cobrar via WhatsApp">💬 Cobrar</a>` : ''}
-                  ${hasDebt && !waHref ? `<button class="btn btn-sm btn-outline charge-no-phone" data-id="${o.id}" title="Cliente sem telefone cadastrado">💬 Cobrar</button>` : ''}
+                  ${hasDebt && !waHref ? `<button class="btn btn-sm btn-outline charge-no-phone" title="Cliente sem telefone cadastrado">💬 Cobrar</button>` : ''}
                 </td>
               </tr>
             `;
@@ -189,9 +190,7 @@ export async function OrdersPage() {
       btn.addEventListener('click', () => router.navigate(`/seller/orders/${btn.dataset.id}`))
     );
     listEl.querySelectorAll('.charge-no-phone').forEach(btn =>
-      btn.addEventListener('click', () =>
-        showToast('Cliente sem telefone. Peça para atualizar o perfil.', 'warning')
-      )
+      btn.addEventListener('click', () => showToast('Cliente sem telefone. Peça para atualizar o perfil.', 'warning'))
     );
 
     updateBatchVisibility();
@@ -204,26 +203,20 @@ export async function OrdersPage() {
   await loadData();
 }
 
-// ===== Helpers =====
-
 function buildChargeMessage(order, remaining) {
   const firstName = (order.clientName || '').split(' ')[0] || 'tudo bem';
   const shortId = order.id.substring(0, 6);
-  const total = curr(order.totalAmount);
-  const paid = curr(order.paidAmount || 0);
-  const falta = curr(remaining);
-
   return `Oi ${firstName}! Passando para falar sobre o seu pedido *#${shortId}* da campanha "${order.campaignTitle}".
 
-Total: ${total}
-Pago: ${paid}
-*Falta: ${falta}*
+Total: ${curr(order.totalAmount)}
+Pago: ${curr(order.paidAmount || 0)}
+*Falta: ${curr(remaining)}*
 
 Quando puder, me avisa! Qualquer dúvida estou à disposição 😊`;
 }
 
 const statusLabel = s => ({
-  awaiting_payment:'Aguardando pagamento', partial_payment:'Pagamento parcial', paid:'Pago',
+  awaiting_payment:'Aguardando pagamento', payment_under_review:'Comprovante em análise', partial_payment:'Pagamento parcial', paid:'Pago',
   sent_to_factory:'Enviado p/ fábrica', in_production:'Em produção',
   production_completed:'Produção concluída', in_transit:'Em transporte',
   available_for_pickup:'Disponível p/ retirada', delivered:'Entregue', cancelled:'Cancelado'

@@ -29,7 +29,7 @@ function renderOrderDetail(order, payments) {
   const paid = order.paidAmount || 0;
   const total = order.totalAmount || 0;
   const remaining = Math.max(0, total - paid);
-  const canCancel = ['awaiting_payment', 'partial_payment', 'paid'].includes(order.status);
+  const canCancel = ['awaiting_payment', 'payment_under_review', 'partial_payment', 'paid'].includes(order.status);
 
   content.innerHTML = `
     <div class="order-detail-page">
@@ -184,7 +184,7 @@ function openClientPaymentModal(orderId, remaining) {
 }
 
 const statusLabel = s => ({
-  awaiting_payment:'Aguardando pagamento', partial_payment:'Pagamento parcial', paid:'Pago',
+  awaiting_payment:'Aguardando pagamento', payment_under_review:'Comprovante em análise', partial_payment:'Pagamento parcial', paid:'Pago',
   sent_to_factory:'Enviado p/ fábrica', in_production:'Em produção',
   production_completed:'Produção concluída', in_transit:'Em transporte',
   available_for_pickup:'Disponível p/ retirada', delivered:'Entregue', cancelled:'Cancelado'

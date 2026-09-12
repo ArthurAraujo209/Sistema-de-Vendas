@@ -18,6 +18,7 @@ export async function CampaignsPage() {
         <select class="form-select" id="filter-status">
           <option value="">Todos os status</option>
           <option value="draft">Rascunho</option>
+          <option value="scheduled">Agendada</option>
           <option value="open">Aberta</option>
           <option value="closed">Encerrada</option>
           <option value="archived">Arquivada</option>
@@ -159,7 +160,7 @@ export async function CampaignsPage() {
 }
 
 function statusLabel(status) {
-  const map = { draft: 'Rascunho', open: 'Aberta', closed: 'Encerrada', archived: 'Arquivada' };
+  const map = { draft: 'Rascunho', scheduled: 'Agendada', open: 'Aberta', closed: 'Encerrada', archived: 'Arquivada' };
   return map[status] || status;
 }
 function formatDate(dateStr) {

@@ -61,7 +61,7 @@ function renderDashboard(orders) {
 
 // Helpers (reutilizados)
 const statusLabel = s => ({
-  awaiting_payment:'Aguardando pagamento', partial_payment:'Pagamento parcial', paid:'Pago',
+  awaiting_payment:'Aguardando pagamento', payment_under_review:'Comprovante em análise', partial_payment:'Pagamento parcial', paid:'Pago',
   sent_to_factory:'Enviado p/ fábrica', in_production:'Em produção',
   production_completed:'Produção concluída', in_transit:'Em transporte',
   available_for_pickup:'Disponível p/ retirada', delivered:'Entregue', cancelled:'Cancelado'
