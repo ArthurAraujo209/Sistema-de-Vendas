@@ -68,6 +68,8 @@ function renderTabContent(campaigns, sellers) {
       <div class="campaigns-grid">
         ${campaigns.map(c => {
           const isScheduled = c.status === 'scheduled';
+          const isVoting = c.status === 'voting';
+          const hasDate = !!(c.openDate);
           return `
             <div class="card campaign-card">
               ${c.images?.[0]
@@ -75,14 +77,15 @@ function renderTabContent(campaigns, sellers) {
                 : `<div class="campaign-cover-placeholder">📷</div>`}
               <div class="card-body">
                 ${isScheduled ? `<span class="badge badge-scheduled" style="margin-bottom:0.5rem;">Em breve</span>` : ''}
+                ${isVoting ? `<span class="badge badge-voting" style="margin-bottom:0.5rem;">Em votação</span>` : ''}
                 <h2>${esc(c.title)}</h2>
                 <p class="campaign-description">${esc((c.description || '').slice(0, 100))}</p>
                 <div class="campaign-meta">
                   <span><strong>${curr(c.price)}</strong></span>
-                  <span>${fmtDate(c.estimatedDelivery)}</span>
+                  ${c.estimatedDelivery ? `<span>${fmtDate(c.estimatedDelivery)}</span>` : ''}
                 </div>
-                ${isScheduled
-                  ? `<div class="countdown" data-open="${esc(c.openDate || '')}" data-campaign="${esc(c.id)}">
+                ${isScheduled && hasDate
+                  ? `<div class="countdown" data-open="${esc(c.openDate)}">
                        <div class="countdown-label">Abre em</div>
                        <div class="countdown-timer">
                          <span class="cd-seg" data-seg="d">--</span><span class="cd-unit">d</span>
@@ -92,7 +95,11 @@ function renderTabContent(campaigns, sellers) {
                        </div>
                      </div>
                      <button class="btn btn-outline btn-block view-campaign-btn" data-id="${c.id}">Ver detalhes</button>`
-                  : `<button class="btn btn-primary btn-block view-campaign-btn" data-id="${c.id}">Ver campanha</button>`}
+                  : isScheduled
+                    ? `<button class="btn btn-outline btn-block view-campaign-btn" data-id="${c.id}">Ver detalhes</button>`
+                    : isVoting
+                      ? `<button class="btn btn-accent btn-block view-campaign-btn" data-id="${c.id}">Votar</button>`
+                      : `<button class="btn btn-primary btn-block view-campaign-btn" data-id="${c.id}">Ver campanha</button>`}
               </div>
             </div>
           `;
@@ -150,7 +157,7 @@ function startCountdowns(container) {
       };
 
       if (!target || diff <= 0) {
-        el.innerHTML = '<div class="countdown-label" style="color:var(--success); font-weight:700;">Disponível agora!</div>';
+        el.innerHTML = '<div class="countdown-label" style="color:var(--warning); font-weight:700;">Em Breve</div>';
       } else {
         const s = Math.floor(diff / 1000);
         const d = Math.floor(s / 86400);

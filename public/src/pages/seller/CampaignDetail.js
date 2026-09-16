@@ -1,4 +1,4 @@
-import { getCampaign, createCampaign, updateCampaign, deleteCampaign } from '../../firebase/firestore.js';
+import { getCampaign, createCampaign, updateCampaign, deleteCampaign, getCampaignVotesDetailed } from '../../firebase/firestore.js';
 import { uploadImage } from '../../firebase/upload.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Toast.js';
@@ -22,13 +22,24 @@ export async function CampaignDetailPage(params) {
       return;
     }
   }
-  renderForm(campaign);
+
+  let votesData = null;
+  if (!isNew && campaign.status === 'voting') {
+    try {
+      votesData = await getCampaignVotesDetailed(campaignId);
+    } catch (err) {
+      console.warn('[votes]', err);
+    }
+  }
+
+  renderForm(campaign, votesData);
 }
 
-function renderForm(campaign) {
+function renderForm(campaign, votesData) {
   const isNew = !campaign;
   const title = isNew ? 'Nova Campanha' : `Editando: ${campaign.title}`;
-  const canEdit = isNew || campaign.status === 'draft' || campaign.status === 'open' || campaign.status === 'scheduled';
+  const canEdit = isNew
+    || ['draft', 'open', 'scheduled', 'voting'].includes(campaign.status);
   const maxInst = campaign?.maxInstallments || 1;
   const currentStatus = campaign?.status || 'draft';
 
@@ -39,6 +50,9 @@ function renderForm(campaign) {
         <h1>${esc(title)}</h1>
         <button class="btn btn-outline" id="back-to-campaigns">← Voltar</button>
       </div>
+
+      ${votesData ? renderVotesCard(votesData) : ''}
+
       <form id="campaign-form" class="card">
         <div class="form-row">
           <div class="form-group flex-1">
@@ -50,6 +64,7 @@ function renderForm(campaign) {
             <select id="camp-status" class="form-select" ${!canEdit ? 'disabled' : ''}>
               <option value="draft" ${currentStatus === 'draft' ? 'selected' : ''}>Rascunho</option>
               <option value="scheduled" ${currentStatus === 'scheduled' ? 'selected' : ''}>Agendada (só visualização)</option>
+              <option value="voting" ${currentStatus === 'voting' ? 'selected' : ''}>Em votação</option>
               <option value="open" ${currentStatus === 'open' ? 'selected' : ''}>Aberta</option>
               <option value="closed" ${currentStatus === 'closed' ? 'selected' : ''}>Encerrada</option>
             </select>
@@ -83,7 +98,7 @@ function renderForm(campaign) {
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label for="camp-open-date">Data de Abertura</label>
+            <label for="camp-open-date">Data de Abertura <small class="text-muted">(opcional)</small></label>
             <input type="date" id="camp-open-date" class="form-input" value="${campaign?.openDate || ''}" ${!canEdit ? 'disabled' : ''}>
           </div>
           <div class="form-group">
@@ -118,14 +133,15 @@ function renderForm(campaign) {
     </div>
   `;
 
-  // Explicação dinâmica do status
+  // Ajuda dinâmica do status
   const statusSelect = document.getElementById('camp-status');
   const statusHelp = document.getElementById('status-help');
   function updateStatusHelp() {
     const v = statusSelect.value;
     const map = {
       draft: 'Visível apenas para você. Nenhum cliente vê.',
-      scheduled: 'Cliente vê a campanha e um cronômetro regressivo até a data de abertura, mas não pode comprar.',
+      scheduled: 'Cliente vê "Em breve". Se você definir uma data, um cronômetro aparece.',
+      voting: 'Cliente vê a campanha e pode votar se vale a pena produzir. Não é possível comprar ainda.',
       open: 'Cliente vê e pode comprar normalmente.',
       closed: 'Vendedor pode gerenciar pedidos, mas clientes não podem criar novos.'
     };
@@ -209,6 +225,111 @@ function renderForm(campaign) {
       }
     });
   }
+
+  // Botão "Ver lista completa de votos" (se houver votos)
+  const openVotersBtn = content.querySelector('#open-voters-btn');
+  if (openVotersBtn && votesData) {
+    openVotersBtn.addEventListener('click', () => openVotersModal(votesData));
+  }
+}
+
+function renderVotesCard(votesData) {
+  const { yes, no, total, voters } = votesData;
+  const yesPct = total > 0 ? Math.round((yes / total) * 100) : 0;
+  const noPct = total > 0 ? 100 - yesPct : 0;
+
+  // Resultado interpretativo
+  let verdict = '';
+  let verdictClass = '';
+  if (total === 0) {
+    verdict = 'Aguardando votos';
+    verdictClass = 'text-muted';
+  } else if (yesPct >= 60) {
+    verdict = '✅ Vale a pena produzir!';
+    verdictClass = '';
+  } else if (noPct >= 60) {
+    verdict = '❌ Melhor não produzir';
+    verdictClass = '';
+  } else {
+    verdict = '⚠️ Resultado dividido';
+    verdictClass = '';
+  }
+
+  return `
+    <div class="card votes-card">
+      <h3>Resultado da votação</h3>
+      <p class="${verdictClass}" style="font-size:1.1rem; font-weight:700; margin-bottom:1rem;">${verdict}</p>
+
+      <div class="vote-count" style="margin-bottom:0.5rem;">
+        <span>👍 ${yes} voto${yes !== 1 ? 's' : ''}</span>
+        <span>${total} voto${total !== 1 ? 's' : ''} no total</span>
+        <span>${no} voto${no !== 1 ? 's' : ''} 👎</span>
+      </div>
+
+      ${total > 0 ? `
+        <div class="vote-bar">
+          <div class="vote-bar-fill vote-bar-yes" style="width:${yesPct}%">
+            ${yesPct >= 15 ? `<span>${yesPct}%</span>` : ''}
+          </div>
+          <div class="vote-bar-fill vote-bar-no" style="width:${noPct}%">
+            ${noPct >= 15 ? `<span>${noPct}%</span>` : ''}
+          </div>
+        </div>
+      ` : ''}
+
+      ${voters.length > 0 ? `
+        <button class="btn btn-outline" id="open-voters-btn" style="margin-top:1rem;">
+          Ver quem votou (${voters.length})
+        </button>
+      ` : ''}
+    </div>
+  `;
+}
+
+function openVotersModal(votesData) {
+  const { voters } = votesData;
+  const rowsHtml = voters.map(v => `
+    <tr>
+      <td>
+        <div style="display:flex; align-items:center; gap:0.5rem;">
+          ${v.photoUrl
+            ? `<img src="${esc(v.photoUrl)}" style="width:32px; height:32px; border-radius:50%; object-fit:cover;">`
+            : `<div style="width:32px; height:32px; border-radius:50%; background:var(--primary-light); color:var(--primary); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:0.75rem;">${initials(v.name)}</div>`}
+          <span>${esc(v.name)}</span>
+        </div>
+      </td>
+      <td>${esc(v.email || '-')}</td>
+      <td>
+        ${v.vote === 'yes'
+          ? '<span class="badge badge-open">👍 Vale a pena</span>'
+          : '<span class="badge badge-closed">👎 Não vale</span>'}
+      </td>
+      <td>${fmtDateTime(v.votedAt)}</td>
+    </tr>
+  `).join('');
+
+  const modalContent = `
+    <div style="max-height:60vh; overflow:auto;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Cliente</th>
+            <th>E-mail</th>
+            <th>Voto</th>
+            <th>Data</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>
+  `;
+
+  Modal({
+    id: 'voters-modal-' + Date.now(),
+    title: 'Quem votou',
+    content: modalContent,
+    size: 'large'
+  });
 }
 
 function renderCustomFields(fields, canEdit) {
@@ -295,11 +416,6 @@ async function handleSubmit(e) {
   const status = document.getElementById('camp-status').value;
   const openDate = document.getElementById('camp-open-date').value;
 
-  if (status === 'scheduled' && !openDate) {
-    showToast('Defina a data de abertura para campanhas agendadas.', 'error');
-    return;
-  }
-
   const data = {
     title: document.getElementById('camp-title').value.trim(),
     status,
@@ -356,4 +472,6 @@ async function handleDelete() {
   });
 }
 
+const initials = n => (n || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+const fmtDateTime = d => d ? new Date(d).toLocaleString('pt-BR') : '-';
 function esc(t) { return String(t ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[m]); }

@@ -300,7 +300,7 @@ export async function createClientUser(email, displayName, phone = '') {
 export async function getOpenCampaigns() {
   const q = query(
     collection(db, 'campaigns'),
-    where('status', 'in', ['open', 'scheduled']),
+    where('status', 'in', ['open', 'scheduled', 'voting']),
     orderBy('createdAt', 'desc')
   );
   const snapshot = await getDocs(q);
@@ -490,7 +490,7 @@ export async function getOpenCampaignsBySeller(sellerId) {
   const q = query(
     collection(db, 'campaigns'),
     where('sellerId', '==', sellerId),
-    where('status', 'in', ['open', 'scheduled']),
+    where('status', 'in', ['open', 'scheduled', 'voting']),
     orderBy('createdAt', 'desc')
   );
   const snap = await getDocs(q);
@@ -515,4 +515,102 @@ export async function getSellerPublicProfile(sellerId) {
 // ========== Helper ==========
 function formatCurrency(value) {
   return Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+// ========== Votação ==========
+export async function getCampaignVotes(campaignId) {
+  const votesRef = collection(db, 'campaigns', campaignId, 'votes');
+  const snap = await getDocs(votesRef);
+  let yes = 0, no = 0, myVote = null;
+  const uid = store.get('currentUser')?.uid;
+  snap.forEach(doc => {
+    const v = doc.data();
+    if (v.vote === 'yes') yes++;
+    else if (v.vote === 'no') no++;
+    if (doc.id === uid) myVote = v.vote;
+  });
+  return { yes, no, total: yes + no, myVote };
+}
+
+export async function submitVote(campaignId, vote) {
+  const uid = store.get('currentUser')?.uid;
+  if (!uid) throw new Error('Faça login para votar.');
+  if (vote !== 'yes' && vote !== 'no') throw new Error('Voto inválido.');
+
+  await setDoc(doc(db, 'campaigns', campaignId, 'votes', uid), {
+    vote,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  });
+
+  // Notifica o vendedor (best-effort)
+  try {
+    const cSnap = await getDoc(doc(db, 'campaigns', campaignId));
+    if (cSnap.exists()) {
+      const c = cSnap.data();
+      if (c.sellerId) {
+        await createNotification(c.sellerId, {
+          type: 'new_vote',
+          title: 'Novo voto recebido',
+          message: `Alguém votou "${vote === 'yes' ? 'Vale a pena' : 'Não vale'}" na campanha "${c.title}".`,
+          link: `/seller/campaigns/${campaignId}`
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('[notif new_vote]', err?.code || err?.message);
+  }
+}
+
+export async function removeVote(campaignId) {
+  const uid = store.get('currentUser')?.uid;
+  if (!uid) return;
+  const ref = doc(db, 'campaigns', campaignId, 'votes', uid);
+  await deleteDoc(ref);
+}
+
+// ========== Votos (visão do vendedor) ==========
+export async function getCampaignVotesDetailed(campaignId) {
+  const votesRef = collection(db, 'campaigns', campaignId, 'votes');
+  const snap = await getDocs(votesRef);
+
+  const voters = [];
+  let yes = 0, no = 0;
+
+  for (const docSnap of snap.docs) {
+    const v = docSnap.data();
+    const uid = docSnap.id;
+    if (v.vote === 'yes') yes++;
+    else if (v.vote === 'no') no++;
+
+    // Busca o nome do usuário
+    let name = 'Usuário';
+    let email = '';
+    let photoUrl = '';
+    try {
+      const uSnap = await getDoc(doc(db, 'users', uid));
+      if (uSnap.exists()) {
+        const u = uSnap.data();
+        name = u.displayName || 'Sem nome';
+        email = u.email || '';
+        photoUrl = u.photoUrl || '';
+      }
+    } catch (err) {
+      // ignora
+    }
+
+    voters.push({
+      uid,
+      name,
+      email,
+      photoUrl,
+      vote: v.vote,
+      votedAt: v.createdAt || v.updatedAt || null
+    });
+  }
+
+  // Ordena: mais recentes primeiro
+  voters.sort((a, b) => new Date(b.votedAt || 0) - new Date(a.votedAt || 0));
+
+  return { yes, no, total: yes + no, voters };
 }

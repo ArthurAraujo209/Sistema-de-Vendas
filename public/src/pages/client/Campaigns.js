@@ -25,29 +25,42 @@ function renderCampaigns(campaigns) {
 
   content.innerHTML = `
     <div class="client-campaigns">
-      <h1 class="page-title">Campanhas Abertas</h1>
+      <h1 class="page-title">Campanhas</h1>
       <div class="campaigns-grid">
-        ${campaigns.map(c => `
-          <div class="card campaign-card">
-            ${c.images?.[0]
-              ? `<div class="img-wrap">${imgTag(c.images[0], { alt: c.title, width: 500, className: 'campaign-cover' })}</div>`
-              : `<div class="campaign-cover-placeholder">📷</div>`}
-            <div class="card-body">
-              <h2>${esc(c.title)}</h2>
-              <p class="campaign-description">${esc(c.description || '')}</p>
-              <div class="campaign-meta">
-                <span><strong>Preço:</strong> ${curr(c.price)}</span>
-                <span><strong>Previsão de entrega:</strong> ${fmtDate(c.estimatedDelivery)}</span>
+        ${campaigns.map(c => {
+          const isScheduled = c.status === 'scheduled';
+          const isVoting = c.status === 'voting';
+          return `
+            <div class="card campaign-card">
+              ${c.images?.[0]
+                ? `<div class="img-wrap">${imgTag(c.images[0], { alt: c.title, width: 500, className: 'campaign-cover' })}</div>`
+                : `<div class="campaign-cover-placeholder">📷</div>`}
+              <div class="card-body">
+                ${isScheduled ? `<span class="badge badge-scheduled" style="margin-bottom:0.5rem;">Em breve</span>` : ''}
+                ${isVoting ? `<span class="badge badge-voting" style="margin-bottom:0.5rem;">Em votação</span>` : ''}
+
+                <h2>${esc(c.title)}</h2>
+                <p class="campaign-description">${esc(c.description || '')}</p>
+
+                <div class="campaign-meta">
+                  <span><strong>Preço:</strong> ${curr(c.price)}</span>
+                  ${c.estimatedDelivery ? `<span><strong>Entrega:</strong> ${fmtDate(c.estimatedDelivery)}</span>` : ''}
+                </div>
+
+                ${isVoting
+                  ? `<button class="btn btn-accent btn-block order-btn" data-id="${c.id}">Votar</button>`
+                  : isScheduled
+                    ? `<button class="btn btn-outline btn-block order-btn" data-id="${c.id}">Ver detalhes</button>`
+                    : `<button class="btn btn-primary btn-block order-btn" data-id="${c.id}">Ver Detalhes</button>`}
               </div>
-              <button class="btn btn-primary btn-block order-btn" data-id="${c.id}">Ver Detalhes</button>
             </div>
-          </div>
-        `).join('')}
+          `;
+        }).join('')}
       </div>
     </div>
   `;
 
-  document.querySelectorAll('.order-btn').forEach(btn => {
+  content.querySelectorAll('.order-btn').forEach(btn => {
     btn.addEventListener('click', () => router.navigate(`/client/campaigns/${btn.dataset.id}`));
   });
 }
