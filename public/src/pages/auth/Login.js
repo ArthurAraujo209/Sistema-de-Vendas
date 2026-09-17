@@ -11,7 +11,7 @@ export function LoginPage() {
       <div class="auth-card">
         <div class="auth-header">
           <div class="auth-logo">
-            <video src="../public/assets/logo-motion.mp4" autoplay loop muted playsinline class="auth-animation"></video>
+            <video src="src/assets/logo-motion.mp4" autoplay loop muted playsinline class="auth-animation"></video>
           </div>
           <h2 style="color: #fff;">Entrar</h2>
           <p style="color: #cacaca;">Acesse sua conta</p>
