@@ -36,7 +36,7 @@ export function Sidebar() {
   nav.className = `sidebar ${collapsed ? 'collapsed' : ''}`;
   nav.innerHTML = `
     <div class="sidebar-brand">
-      <img src="../public/assets/logo.svg" alt="Logo" class="brand-logo"
+      <img src="src/assets/logo.svg" alt="Logo" class="brand-logo"
            onerror="this.outerHTML='<span class=&quot;brand-text&quot;>Encomendas</span>'">
     </div>
     <ul class="nav-list">
