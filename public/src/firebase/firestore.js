@@ -324,6 +324,22 @@ export async function createClientOrder(data) {
     }
   }
 
+  // Busca telefone e nome do vendedor (para o botão de WhatsApp)
+  let sellerPhone = '';
+  let sellerName = '';
+  if (data.sellerId) {
+    try {
+      const sSnap = await getDoc(doc(db, 'users', data.sellerId));
+      if (sSnap.exists()) {
+        const s = sSnap.data();
+        sellerPhone = s.phone || '';
+        sellerName = s.displayName || '';
+      }
+    } catch (err) {
+      console.warn('[createClientOrder fetch seller]', err?.code || err?.message);
+    }
+  }
+
   const now = new Date().toISOString();
   const status = data.status || 'awaiting_payment';
 
@@ -332,6 +348,8 @@ export async function createClientOrder(data) {
     clientId,
     clientPhone: profile.phone || data.clientPhone || '',
     clientEmail: profile.email || current.email || '',
+    sellerPhone,
+    sellerName,
     status,
     createdAt: now,
     updatedAt: now,

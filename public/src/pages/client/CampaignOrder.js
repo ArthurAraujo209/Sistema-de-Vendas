@@ -39,7 +39,7 @@ function renderOrderForm(campaign, cfg) {
 
   const methods = (cfg.paymentMethods && cfg.paymentMethods.length)
     ? cfg.paymentMethods
-    : ['pix']; // fallback: se vendedor não configurou, assume PIX
+    : ['pix'];
 
   const methodOptions = methods.map(m =>
     `<option value="${m}">${METHOD_LABEL[m] || m}</option>`
@@ -79,7 +79,7 @@ function renderOrderForm(campaign, cfg) {
             <code id="pix-value">${esc(cfg.pixKey || '')}</code>
             <button type="button" class="btn btn-sm btn-outline" id="copy-pix-btn">Copiar</button>
           </div>
-          <small class="text-muted">Faça o pagamento para essa chave e anexe o comprovante abaixo.</small>
+          <small class="text-muted">Faça o pagamento para essa chave e, se puder, anexe o comprovante abaixo.</small>
         </div>
 
         <div class="form-group">
@@ -98,12 +98,11 @@ function renderOrderForm(campaign, cfg) {
         </div>
 
         <div class="form-group">
-          <label for="payment-receipt">Comprovante (imagem) *</label>
+          <label for="payment-receipt">Comprovante (opcional)</label>
           <input type="file" id="payment-receipt" accept="image/*">
-          <small class="text-muted">Seu pedido ficará com status <strong>"Comprovante em análise"</strong> até o vendedor confirmar.</small>
-          <p class="text-muted">Caso não consiga enviar o comprovante, entre em contato com o vendedor.</p>
-          <a href="https://api.whatsapp.com/send?phone=${cfg.whatsapp || ''}" target="_blank" class="btn btn-sm btn-outline">Falar com vendedor</a>
-          <br><br>
+          <small class="text-muted">
+            Se preferir, você pode <strong>pular</strong> esta etapa e enviar o comprovante depois pelo WhatsApp.
+          </small>
           <img id="receipt-preview" class="receipt-preview" style="display:none;">
         </div>
 
@@ -194,11 +193,8 @@ function renderOrderForm(campaign, cfg) {
     const total = qty * campaign.price;
     const installments = parseInt(installmentSelect.value) || 1;
     const method = methodSelect.value;
-
-    // Validações
-    if (!receiptInput.files[0]) {
-      return showToast('Anexe o comprovante para concluir o pedido.', 'error');
-    }
+    const receiptFile = receiptInput.files[0];
+    const hasReceipt = !!receiptFile;
 
     const fields = customFields.map((field, idx) => {
       const input = document.querySelector(`[name="cf-${idx}"]`);
@@ -211,23 +207,25 @@ function renderOrderForm(campaign, cfg) {
     });
 
     submitBtn.disabled = true;
-    submitBtn.textContent = 'Enviando comprovante...';
+    submitBtn.textContent = hasReceipt ? 'Enviando comprovante...' : 'Criando pedido...';
 
     try {
-      // Upload do comprovante antes de tudo (obrigatório)
+      // Upload (só se houver comprovante)
       let receiptUrl = '';
-      try {
-        receiptUrl = await uploadImage(receiptInput.files[0]);
-      } catch (err) {
-        showToast('Erro ao enviar comprovante. Tente novamente.', 'error');
-        submitBtn.disabled = false;
-        submitBtn.textContent = 'Confirmar Pedido';
-        return;
+      if (hasReceipt) {
+        try {
+          receiptUrl = await uploadImage(receiptFile);
+        } catch (err) {
+          showToast('Erro ao enviar comprovante. Você pode enviar depois pelo WhatsApp.', 'warning');
+          receiptUrl = '';
+        }
       }
 
       let payAmount = parseFloat(amountInput.value) || total;
       if (isNaN(payAmount) || payAmount <= 0) payAmount = total;
       payAmount = Math.min(payAmount, total);
+
+      const finalStatus = (hasReceipt && receiptUrl) ? 'payment_under_review' : 'awaiting_payment';
 
       const orderData = {
         campaignId: campaign.id,
@@ -240,23 +238,28 @@ function renderOrderForm(campaign, cfg) {
         paidAmount: 0,
         remainingAmount: total,
         clientName: store.get('currentUser').displayName || 'Cliente',
-        status: 'payment_under_review'
+        status: finalStatus
       };
 
       const newOrderId = await createClientOrder(orderData);
 
-      await addPayment(newOrderId, {
-        amount: payAmount,
-        date: new Date().toISOString().split('T')[0],
-        method,
-        notes: `Comprovante: ${receiptUrl}`,
-        status: 'pending',
-        verified: false,
-        installmentInfo: installments > 1 ? `Parcela 1 de ${installments}` : 'À vista'
-      });
+      // Só cria registro de pagamento se realmente houver comprovante
+      if (hasReceipt && receiptUrl) {
+        await addPayment(newOrderId, {
+          amount: payAmount,
+          date: new Date().toISOString().split('T')[0],
+          method,
+          notes: `Comprovante: ${receiptUrl}`,
+          status: 'pending',
+          verified: false,
+          installmentInfo: installments > 1 ? `Parcela 1 de ${installments}` : 'À vista'
+        });
+        showToast('Pedido criado! Comprovante em análise.', 'success');
+      } else {
+        showToast('Pedido criado! Envie o comprovante pelo WhatsApp.', 'success');
+      }
 
-      showToast('Pedido criado! Comprovante em análise.', 'success');
-      router.navigate('/client/dashboard');
+      router.navigate(`/client/orders/${newOrderId}`);
     } catch (err) {
       console.error(err);
       showToast('Erro ao criar pedido.', 'error');

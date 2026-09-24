@@ -1007,3 +1007,12 @@ input, select, textarea, button { font-family: inherit; font-size: inherit; }
 
 /* Modal de votantes */
 #voters-modal-table { width: 100%; }
+
+/* Callout de envio de comprovante */
+.receipt-callout {
+  border-width: 2px;
+}
+.receipt-callout h3 {
+  font-size: 1.05rem;
+  color: var(--text-primary);
+}
