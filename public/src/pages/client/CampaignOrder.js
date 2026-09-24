@@ -99,8 +99,11 @@ function renderOrderForm(campaign, cfg) {
 
         <div class="form-group">
           <label for="payment-receipt">Comprovante (imagem) *</label>
-          <input type="file" id="payment-receipt" accept="image/*" required>
-          <small class="text-muted">Obrigatório. Seu pedido ficará com status <strong>"Comprovante em análise"</strong> até o vendedor confirmar.</small>
+          <input type="file" id="payment-receipt" accept="image/*">
+          <small class="text-muted">Seu pedido ficará com status <strong>"Comprovante em análise"</strong> até o vendedor confirmar.</small>
+          <p class="text-muted">Caso não consiga enviar o comprovante, entre em contato com o vendedor.</p>
+          <a href="https://api.whatsapp.com/send?phone=${cfg.whatsapp || ''}" target="_blank" class="btn btn-sm btn-outline">Falar com vendedor</a>
+          <br><br>
           <img id="receipt-preview" class="receipt-preview" style="display:none;">
         </div>
 
