@@ -2,7 +2,7 @@ import {
   getOrder, createOrder, updateOrder, deleteOrder,
   getCampaigns, getCampaign,
   getUserByEmail, createClientUser,
-  addPayment, getPayments, confirmPayment
+  addPayment, getPayments, confirmPayment, deletePayment
 } from '../../firebase/firestore.js';
 import { router } from '../../router.js';
 import { showToast } from '../../components/Toast.js';
@@ -253,10 +253,10 @@ function renderEditOrderForm(order, campaign, payments) {
         <div id="payments-list">
           ${payments.length ? `
             <table class="table">
-              <thead><tr><th>Data</th><th>Valor</th><th>Forma</th><th>Comprovante</th><th>Status</th></tr></thead>
+              <thead><tr><th>Data</th><th>Valor</th><th>Forma</th><th>Comprovante</th><th>Status</th><th></th></tr></thead>
               <tbody>
                 ${payments.map(p => `
-                  <tr>
+                  <tr data-payment-id="${p.id}">
                     <td>${fmtDate(p.createdAt || p.date)}</td>
                     <td>${curr(p.amount)}</td>
                     <td>${paymentMethodLabel(p.method)}</td>
@@ -266,6 +266,9 @@ function renderEditOrderForm(order, campaign, payments) {
                     <td>${p.verified === false
                       ? `<button class="btn btn-sm btn-primary confirm-payment-btn" data-id="${p.id}">Confirmar</button>`
                       : '<span class="badge badge-paid">Confirmado</span>'}</td>
+                    <td>
+                      <button class="btn btn-sm btn-outline delete-payment-btn" data-id="${p.id}" title="Excluir pagamento">🗑️</button>
+                    </td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -327,6 +330,32 @@ function renderEditOrderForm(order, campaign, payments) {
         btn.disabled = false;
         btn.textContent = 'Confirmar';
       }
+    });
+  });
+
+  // Botões de excluir pagamento
+  content.querySelectorAll('.delete-payment-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const payment = payments.find(p => p.id === btn.dataset.id);
+      const amountText = payment ? curr(payment.amount) : 'este pagamento';
+      ConfirmDialog({
+        title: 'Excluir pagamento',
+        message: `Tem certeza que deseja excluir ${amountText}? O saldo do pedido será recalculado e a ação não pode ser desfeita.`,
+        confirmText: 'Excluir',
+        cancelText: 'Cancelar',
+        onConfirm: async () => {
+          try {
+            btn.disabled = true;
+            await deletePayment(order.id, btn.dataset.id);
+            showToast('Pagamento excluído.', 'success');
+            await renderOrderDetail(order.id);
+          } catch (err) {
+            console.error(err);
+            showToast('Erro ao excluir pagamento.', 'error');
+            btn.disabled = false;
+          }
+        }
+      });
     });
   });
 

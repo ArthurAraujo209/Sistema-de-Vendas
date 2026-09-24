@@ -1,9 +1,8 @@
-import { getClientOrder, getPayments, addPayment, cancelClientOrder } from '../../firebase/firestore.js';
-import { uploadImage } from '../../firebase/upload.js';
+import { getClientOrder, getPayments, cancelClientOrder } from '../../firebase/firestore.js';
 import { router } from '../../router.js';
 import { Loader } from '../../components/Loader.js';
 import { showToast } from '../../components/Toast.js';
-import { Modal, closeModal, ConfirmDialog } from '../../components/Modal.js';
+import { ConfirmDialog } from '../../components/Modal.js';
 import { whatsappLink } from '../../utils/imageUtils.js';
 
 export async function ClientOrderDetailPage(params) {
@@ -32,26 +31,45 @@ function renderOrderDetail(order, payments) {
   const remaining = Math.max(0, total - paid);
   const canCancel = ['awaiting_payment', 'payment_under_review', 'partial_payment', 'paid'].includes(order.status);
 
-  // Botão de enviar comprovante no WhatsApp
-  const hasVerifiedPayment = payments.some(p => p.verified !== false);
+  const isCancelled = order.status === 'cancelled';
+  const isFullyPaid = remaining <= 0;
+
+  // Só mostra o card se ainda houver saldo devedor e não estiver cancelado
+  const showReceiptCard = !isCancelled && !isFullyPaid;
+  const showWhatsButton = showReceiptCard && order.sellerPhone;
+
+  // Estatísticas dos pagamentos
   const hasAnyPayment = payments.length > 0;
-  const showWhatsButton = !hasVerifiedPayment && order.status !== 'cancelled' && order.sellerPhone;
+  const hasPendingReview = payments.some(p => p.verified === false);
+  const hasVerified = payments.some(p => p.verified !== false);
 
   const waMessage = buildReceiptMessage(order, paid, remaining);
   const waHref = showWhatsButton ? whatsappLink(order.sellerPhone, waMessage) : '';
+
+  // Mensagem contextual
+  let cardTitle = 'Envie o comprovante de pagamento';
+  let cardMessage = '';
+  if (hasPendingReview) {
+    cardTitle = 'Comprovante em análise';
+    cardMessage = `Seu comprovante está sendo conferido pelo vendedor.${
+      hasVerified ? ` Ainda falta pagar ${curr(remaining)}.` : ''
+    } Se preferir, envie novamente pelo WhatsApp.`;
+  } else if (hasVerified && remaining > 0) {
+    cardTitle = 'Ainda falta pagar';
+    cardMessage = `Já recebemos ${curr(paid)}. Ainda faltam ${curr(remaining)}. Envie o comprovante do restante pelo WhatsApp.`;
+  } else {
+    cardTitle = 'Envie o comprovante de pagamento';
+    cardMessage = `Você ainda não anexou o comprovante. Envie para o vendedor pelo WhatsApp.`;
+  }
 
   content.innerHTML = `
     <div class="order-detail-page">
       <h1>Pedido #${order.id.substring(0,6)}</h1>
 
-      ${!hasVerifiedPayment && order.status !== 'cancelled' ? `
+      ${showReceiptCard ? `
         <div class="card receipt-callout" style="border-color: var(--primary); background: var(--primary-soft);">
-          <h3 style="margin-bottom:0.35rem;">Envie o comprovante de pagamento</h3>
-          <p style="font-size:0.9rem; margin-bottom:1rem;">
-            ${hasAnyPayment
-              ? 'Seu comprovante ainda está em análise. Se preferir, envie por aqui também.'
-              : 'Você ainda não anexou o comprovante. Envie para o vendedor pelo WhatsApp.'}
-          </p>
+          <h3 style="margin-bottom:0.35rem;">${cardTitle}</h3>
+          <p style="font-size:0.9rem; margin-bottom:1rem;">${cardMessage}</p>
           ${showWhatsButton
             ? `<a href="${waHref}" target="_blank" rel="noopener" class="btn btn-success btn-block" id="send-receipt-btn">
                  📱 Enviar comprovante no WhatsApp
@@ -60,10 +78,18 @@ function renderOrderDetail(order, payments) {
         </div>
       ` : ''}
 
+      ${isFullyPaid && !isCancelled ? `
+        <div class="card" style="border-color: var(--success); background: rgba(16, 185, 129, 0.08);">
+          <h3 style="margin:0; color: var(--success);">✅ Pagamento completo</h3>
+          <p style="font-size:0.9rem; margin-top:0.35rem;">Você já pagou o valor total deste pedido. Obrigado!</p>
+        </div>
+      ` : ''}
+
       <div class="card">
         <h3>Detalhes</h3>
         <p><strong>Campanha:</strong> ${esc(order.campaignTitle)}</p>
         <p><strong>Quantidade:</strong> ${order.quantity}</p>
+        ${order.installments && order.installments > 1 ? `<p><strong>Parcelamento:</strong> ${order.installments}x</p>` : ''}
         <p><strong>Valor Total:</strong> ${curr(total)}</p>
         <p><strong>Pago:</strong> ${curr(paid)} / <strong>Restante:</strong> ${curr(remaining)}</p>
         <p><strong>Status:</strong> <span class="badge badge-${order.status}">${statusLabel(order.status)}</span></p>
@@ -93,8 +119,16 @@ function renderOrderDetail(order, payments) {
               `).join('')}
             </tbody>
           </table>
-        ` : '<p class="text-muted">Nenhum pagamento registrado.</p>'}
-        ${remaining > 0 ? `<button id="add-payment-btn" class="btn btn-primary" style="margin-top:1rem;">+ Adicionar Pagamento</button>` : ''}
+        ` : `
+          <div class="empty-payments">
+            <p class="text-muted" style="text-align:center; padding:1rem 0;">
+              Nenhum pagamento registrado ainda.
+            </p>
+            <p class="text-muted" style="font-size:0.85rem; text-align:center;">
+              Assim que o vendedor confirmar o seu pagamento, ele aparecerá aqui automaticamente.
+            </p>
+          </div>
+        `}
       </div>
 
       <div class="card">
@@ -125,12 +159,6 @@ function renderOrderDetail(order, payments) {
       });
     });
   }
-
-  if (remaining > 0) {
-    document.getElementById('add-payment-btn').addEventListener('click', () => {
-      openClientPaymentModal(order.id, remaining);
-    });
-  }
 }
 
 function buildReceiptMessage(order, paid, remaining) {
@@ -140,92 +168,6 @@ function buildReceiptMessage(order, paid, remaining) {
 Pago: ${curr(paid)}
 Falta: ${curr(remaining)}`;
   return `${firstLine}\n\n${money}\n\n📎 Segue em anexo.`;
-}
-
-function openClientPaymentModal(orderId, remaining) {
-  const modalContent = `
-    <form id="client-payment-form">
-      <div class="form-group">
-        <label>Valor (máx. ${curr(remaining)})</label>
-        <input type="number" id="pay-amount" class="form-input" step="0.01" min="0.01" max="${remaining.toFixed(2)}" required>
-      </div>
-      <div class="form-group">
-        <label>Forma de Pagamento</label>
-        <select id="pay-method" class="form-select">
-          <option value="pix">PIX</option>
-          <option value="dinheiro">Dinheiro</option>
-          <option value="cartao">Cartão</option>
-          <option value="boleto">Boleto</option>
-          <option value="transferencia">Transferência</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Comprovante (imagem)</label>
-        <input type="file" id="pay-receipt" accept="image/*">
-        <img id="modal-receipt-preview" class="receipt-preview" style="display:none;">
-      </div>
-      <div class="modal-footer" style="padding: 1rem 0 0; border-top: none;">
-        <button type="button" class="btn btn-secondary" data-close-modal>Cancelar</button>
-        <button type="submit" class="btn btn-primary">Registrar</button>
-      </div>
-    </form>
-  `;
-
-  const modal = Modal({
-    id: 'client-payment-modal-' + Date.now(),
-    title: 'Adicionar Pagamento',
-    content: modalContent,
-    size: 'medium'
-  });
-
-  const receiptInput = modal.content.querySelector('#pay-receipt');
-  const preview = modal.content.querySelector('#modal-receipt-preview');
-  receiptInput.addEventListener('change', () => {
-    const file = receiptInput.files[0];
-    if (file) {
-      preview.src = URL.createObjectURL(file);
-      preview.style.display = 'block';
-    } else {
-      preview.style.display = 'none';
-    }
-  });
-
-  modal.content.querySelector('#client-payment-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const amount = parseFloat(modal.content.querySelector('#pay-amount').value);
-    if (isNaN(amount) || amount <= 0 || amount > remaining) {
-      showToast('Valor inválido.', 'error');
-      return;
-    }
-    const method = modal.content.querySelector('#pay-method').value;
-    const file = receiptInput.files[0];
-    let receiptUrl = '';
-    if (file) {
-      try {
-        receiptUrl = await uploadImage(file);
-      } catch (err) {
-        showToast('Erro no upload do comprovante.', 'error');
-        return;
-      }
-    }
-    const notes = receiptUrl ? `Comprovante: ${receiptUrl}` : '';
-
-    try {
-      await addPayment(orderId, {
-        amount,
-        date: new Date().toISOString().split('T')[0],
-        method,
-        notes,
-        status: 'pending',
-        verified: receiptUrl ? false : true
-      });
-      showToast('Pagamento registrado!', 'success');
-      closeModal(modal.id);
-      router.navigate(`/client/orders/${orderId}`);
-    } catch (err) {
-      showToast('Erro ao registrar pagamento.', 'error');
-    }
-  });
 }
 
 const statusLabel = s => ({

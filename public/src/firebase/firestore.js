@@ -265,6 +265,46 @@ export async function confirmPayment(orderId, paymentId) {
   await updateOrder(orderId, {}, `Pagamento de ${formatCurrency(payment.amount)} confirmado`);
 }
 
+export async function deletePayment(orderId, paymentId) {
+  const paymentsRef = collection(db, 'orders', orderId, 'payments');
+  const payRef = doc(paymentsRef, paymentId);
+  const paySnap = await getDoc(payRef);
+  if (!paySnap.exists()) throw new Error('Pagamento não encontrado');
+  const payment = paySnap.data();
+
+  // Apaga
+  await deleteDoc(payRef);
+
+  // Recalcula totais a partir dos pagamentos restantes (só os verificados contam)
+  const remainingSnap = await getDocs(paymentsRef);
+  let totalPaid = 0;
+  remainingSnap.forEach(d => {
+    const p = d.data();
+    if (p.verified !== false) totalPaid += p.amount || 0;
+  });
+
+  const orderRef = doc(db, 'orders', orderId);
+  const orderSnap = await getDoc(orderRef);
+  if (!orderSnap.exists()) throw new Error('Pedido não encontrado');
+  const order = orderSnap.data();
+  const total = order.totalAmount || 0;
+  const newRemaining = Math.max(0, total - totalPaid);
+
+  await updateDoc(orderRef, {
+    paidAmount: totalPaid,
+    remainingAmount: newRemaining,
+    updatedAt: new Date().toISOString()
+  });
+
+  await updateOrder(
+    orderId,
+    {},
+    `Pagamento de ${formatCurrency(payment.amount)} removido (${payment.method || 'não informado'})`
+  );
+
+  return { totalPaid, newRemaining };
+}
+
 export async function getPayments(orderId) {
   const paymentsRef = collection(db, `orders/${orderId}/payments`);
   const q = query(paymentsRef, orderBy('createdAt', 'desc'));
